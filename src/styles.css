@@ -360,27 +360,6 @@ h2 {
   letter-spacing: 0;
 }
 
-.waveform polyline {
-  fill: none;
-  stroke: #74ff93;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 4;
-  filter: drop-shadow(0 0 8px rgba(116, 255, 147, 0.9));
-  animation: pulse-line 1.15s infinite linear;
-}
-
-@keyframes pulse-line {
-  0% {
-    opacity: 0.68;
-  }
-  50% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0.68;
-  }
-}
 
 .vitals {
   display: grid;
