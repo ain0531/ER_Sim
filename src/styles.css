@@ -138,6 +138,19 @@ h2 {
     linear-gradient(90deg, rgba(66, 84, 73, 0.32), rgba(20, 30, 25, 0.88));
 }
 
+.patient-face {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 80px;
+  height: 80px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background-color: #1a2420;
+  background-repeat: no-repeat;
+  overflow: hidden;
+  z-index: 1;
+}
+
 .light-rig {
   position: absolute;
   top: 0;
