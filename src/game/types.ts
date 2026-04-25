@@ -1,4 +1,11 @@
 export type CommandId =
+  | "airwayCheck"
+  | "neckVeinCheck"
+  | "subcutaneousEmphysemaCheck"
+  | "trachealDeviationCheck"
+  | "chestPalpation"
+  | "radialPulseCheck"
+  | "consciousnessCheck"
   | "nasalAirway"
   | "oralAirway"
   | "intubation"
@@ -59,6 +66,7 @@ export type BaseCommand = {
   label: string;
   duration: number;
   blocksCategory?: boolean;
+  repeatable?: boolean;
 };
 
 export type CaseCommandProfile = {
@@ -68,6 +76,7 @@ export type CaseCommandProfile = {
   stateDelta?: Partial<Record<keyof Omit<PatientState, "performed" | "gcs">, number>>;
   requiresCompleted?: {
     commandIds: CommandId[];
+    anyOfCommandIds?: CommandId[];
     message: string;
   }[];
   requiresWinProgress?: {
@@ -102,12 +111,17 @@ export type WinCondition = {
   stabilization: {
     minBpSys: number;
     maxShock: number;
+    primarySurveyCommands?: CommandId[];
   };
 };
 
 export type ProgressionRule = {
   uncontrolledDelta: Partial<Record<keyof Omit<PatientState, "performed" | "gcs">, number>>;
   controlledMultiplier: number;
+  suppressedByCompleted?: {
+    stateKey: keyof Omit<PatientState, "performed" | "gcs">;
+    commandIds: CommandId[];
+  }[];
 };
 
 export type LossCondition = {

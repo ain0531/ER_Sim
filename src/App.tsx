@@ -68,11 +68,14 @@ export function App() {
   const completedRequirements = requiredCommands.filter((id) => isCommandComplete(id, patient, completionTimes)).length;
   const bpStable = patient.bpSys >= winCondition.stabilization.minBpSys;
   const shockStable = patient.shock < winCondition.stabilization.maxShock;
+  const primarySurveyCommands = winCondition.stabilization.primarySurveyCommands ?? [];
+  const primarySurveyDone =
+    primarySurveyCommands.length === 0 || primarySurveyCommands.every((id) => isCommandComplete(id, patient, completionTimes));
   const hasSpo2Monitor = isCommandComplete("spo2Monitor", patient, completionTimes);
   const hasBpCuff = isCommandComplete("bpCuff", patient, completionTimes);
   const hasEcgMonitor = isCommandComplete("ecgMonitor", patient, completionTimes);
   const hasTemperatureMeasurement = isCommandComplete("temperatureMeasurement", patient, completionTimes);
-  const faceCell = getFaceCell(patient, status);
+  const faceCell = status === "won" && bpStable && shockStable && primarySurveyDone ? getFaceCell(initialPatient, "ready") : getFaceCell(patient, status);
   const faceImageUrl = `/images/${gender === "female" ? "patient_woman_face" : "patient_man_face"}.png`;
 
   function start() {
@@ -117,13 +120,14 @@ export function App() {
     }
 
     setPatient((current) => {
+      const nextCompletionTimes = { ...completionTimes, [command.id]: current.elapsed + command.duration };
       const next = applyCommand(current, command, completionTimes);
-      const nextOutcome = getOutcome(next, completionTimes, winCondition, lossCondition);
+      const nextOutcome = getOutcome(next, nextCompletionTimes, winCondition, lossCondition);
       setStatus(nextOutcome);
       if (command.blocksCategory !== false) {
         setCategoryLocks((currentLocks) => ({ ...currentLocks, [command.category]: current.elapsed + command.duration }));
       }
-      setCompletionTimes((currentTimes) => ({ ...currentTimes, [command.id]: current.elapsed + command.duration }));
+      setCompletionTimes(nextCompletionTimes);
       const effectiveGrade = getEffectiveGrade(command, current, completionTimes);
       const effectiveEffects = getEffectiveEffects(command, current, completionTimes);
       setLog((entries) => [
@@ -224,6 +228,11 @@ export function App() {
             <p className={shockStable ? "done" : ""}>
               {shockStable ? "達成" : "未達成"}: ショック {winCondition.stabilization.maxShock}未満
             </p>
+            {primarySurveyCommands.length > 0 ? (
+              <p className={primarySurveyDone ? "done" : ""}>
+                {primarySurveyDone ? "達成" : "未達成"}: Primary Survey
+              </p>
+            ) : null}
           </div>
         </aside>
 
@@ -339,7 +348,7 @@ export function App() {
                   {expanded ? (
                     <div className="command-grid">
                       {categoryCommands.map((command) => {
-                        const done = patient.performed.includes(command.id);
+                        const done = patient.performed.includes(command.id) && !command.repeatable;
                         const lockedUntil = categoryLocks[command.category] ?? 0;
                         const categoryLocked = command.blocksCategory !== false && lockedUntil > patient.elapsed;
                         const blockReason = getCommandBlockReason(command, patient, completionTimes, winCondition);
@@ -390,6 +399,7 @@ export function App() {
                   <p>
                     必須処置 {completedRequirements}/{requiredCommands.length} / SBP {winCondition.stabilization.minBpSys}以上 /
                     shock {winCondition.stabilization.maxShock}未満
+                    {primarySurveyCommands.length > 0 ? " / Primary Survey" : ""}
                   </p>
                 </div>
                 <div className="debug-section">

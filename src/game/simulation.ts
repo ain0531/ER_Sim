@@ -46,7 +46,12 @@ export function isCommandComplete(commandId: CommandId, state: PatientState, com
   return state.performed.includes(commandId) && (completionTimes[commandId] ?? Number.POSITIVE_INFINITY) <= state.elapsed;
 }
 
-function applyProgressionDelta(state: PatientState, progression: ProgressionRule, multiplier: number): PatientState {
+function applyProgressionDelta(
+  state: PatientState,
+  completionTimes: CompletionTimes,
+  progression: ProgressionRule,
+  multiplier: number
+): PatientState {
   const next = { ...state };
 
   for (const [key, value] of Object.entries(progression.uncontrolledDelta)) {
@@ -55,6 +60,12 @@ function applyProgressionDelta(state: PatientState, progression: ProgressionRule
     }
 
     const stateKey = key as keyof typeof progression.uncontrolledDelta;
+    const suppressed = progression.suppressedByCompleted?.some(
+      (rule) => rule.stateKey === stateKey && rule.commandIds.every((id) => isCommandComplete(id, state, completionTimes))
+    );
+    if (suppressed) {
+      continue;
+    }
     const currentValue = next[stateKey];
     if (typeof currentValue !== "number") {
       continue;
@@ -82,7 +93,7 @@ export function progressPatient(
 ): PatientState {
   const controlled = winCondition.requiredCommands.every((id) => isCommandComplete(id, state, completionTimes));
   const multiplier = controlled ? progression.controlledMultiplier : 1;
-  const next = applyProgressionDelta({ ...state, elapsed: state.elapsed + 1 }, progression, multiplier);
+  const next = applyProgressionDelta({ ...state, elapsed: state.elapsed + 1 }, completionTimes, progression, multiplier);
 
   return deriveVitals(next);
 }
@@ -139,7 +150,7 @@ export function getEffectiveEffects(command: Command, state: PatientState, compl
 }
 
 export function applyCommand(state: PatientState, command: Command, completionTimes: CompletionTimes): PatientState {
-  const alreadyDone = state.performed.includes(command.id);
+  const alreadyDone = state.performed.includes(command.id) && !command.repeatable;
   let next = { ...state };
 
   if (alreadyDone) {
@@ -147,7 +158,9 @@ export function applyCommand(state: PatientState, command: Command, completionTi
     return deriveVitals(next);
   }
 
-  next.performed = [...next.performed, command.id];
+  if (!state.performed.includes(command.id)) {
+    next.performed = [...next.performed, command.id];
+  }
 
   const conditionalActive = isConditionalProfileActive(command, state, completionTimes);
   const activeDelta =
@@ -174,11 +187,7 @@ export function getOutcome(
   winCondition: WinCondition,
   lossCondition: LossCondition
 ): GameStatus {
-  const won =
-    winCondition.requiredCommands.every((id) => isCommandComplete(id, state, completionTimes)) &&
-    state.bpSys >= winCondition.stabilization.minBpSys &&
-    state.shock < winCondition.stabilization.maxShock;
-  if (won) {
+  if (winCondition.requiredCommands.every((id) => isCommandComplete(id, state, completionTimes))) {
     return "won";
   }
 
@@ -208,7 +217,11 @@ export function gradeLabel(grade: CommandGrade) {
 
 export function getCommandBlockReason(command: Command, state: PatientState, completionTimes: CompletionTimes, winCondition: WinCondition) {
   for (const requirement of command.requiresCompleted ?? []) {
-    const completed = requirement.commandIds.every((id) => isCommandComplete(id, state, completionTimes));
+    const allCompleted = requirement.commandIds.every((id) => isCommandComplete(id, state, completionTimes));
+    const anyCompleted =
+      requirement.anyOfCommandIds === undefined ||
+      requirement.anyOfCommandIds.some((id) => isCommandComplete(id, state, completionTimes));
+    const completed = allCompleted && anyCompleted;
     if (!completed) {
       return requirement.message;
     }

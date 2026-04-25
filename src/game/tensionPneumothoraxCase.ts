@@ -24,6 +24,48 @@ export const initialPatient: PatientState = {
 
 export const tensionPneumothoraxCommandProfiles: Record<CommandId, CaseCommandProfile> = {
   ...traumaShockCommandProfiles,
+  airwayCheck: {
+    grade: "acceptable",
+    requiredConditions: ["A評価", "気道開通の確認"],
+    effects: ["気道評価を進める"],
+    stateDelta: { shock: -1 }
+  },
+  neckVeinCheck: {
+    grade: "best",
+    requiredConditions: ["B評価", "頸静脈所見の確認"],
+    effects: ["緊張性気胸を示唆する身体所見を確認"],
+    stateDelta: { shock: -2 }
+  },
+  subcutaneousEmphysemaCheck: {
+    grade: "acceptable",
+    requiredConditions: ["B評価", "胸部外傷所見の確認"],
+    effects: ["胸部損傷評価を補強"],
+    stateDelta: { shock: -1 }
+  },
+  trachealDeviationCheck: {
+    grade: "best",
+    requiredConditions: ["B評価", "気管偏位の確認"],
+    effects: ["緊張性気胸を示唆する重要所見を確認"],
+    stateDelta: { shock: -2 }
+  },
+  chestPalpation: {
+    grade: "acceptable",
+    requiredConditions: ["B評価", "前胸部触診"],
+    effects: ["胸部所見を確認"],
+    stateDelta: { shock: -1 }
+  },
+  radialPulseCheck: {
+    grade: "acceptable",
+    requiredConditions: ["C評価", "末梢循環の確認"],
+    effects: ["ショック評価を補強"],
+    stateDelta: { shock: -1 }
+  },
+  consciousnessCheck: {
+    grade: "acceptable",
+    requiredConditions: ["D評価", "意識レベルの確認"],
+    effects: ["神経学的評価を補強"],
+    stateDelta: { shock: -1 }
+  },
   oxygen: {
     grade: "acceptable",
     requiredConditions: ["低酸素", "呼吸不全"],

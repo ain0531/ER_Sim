@@ -3,6 +3,8 @@ import type { CaseCommandProfile, Command, CommandId, GameCase, LossCondition, P
 
 export { commandCategories };
 
+const vascularAccessRequirement = { commandIds: [], anyOfCommandIds: ["iv", "sheath"] as CommandId[], message: "ルート確保またはシース確保が必要" };
+
 export const initialPatient: PatientState = {
   elapsed: 0,
   hr: 132,
@@ -22,6 +24,12 @@ export const initialPatient: PatientState = {
 };
 
 export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> = {
+  airwayCheck: {
+    grade: "acceptable",
+    requiredConditions: ["A評価", "気道開通の確認"],
+    effects: ["気道評価を進める", "Primary Surveyを構成する"],
+    stateDelta: { bleeding: -2, shock: -2 }
+  },
   nasalAirway: {
     grade: "ineffective",
     requiredConditions: ["自発呼吸あり", "鼻出血・頭蓋底骨折疑いなし"],
@@ -76,6 +84,30 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
     effects: ["適応外では出血と遅延"],
     stateDelta: { bleeding: 8, shock: 9 }
   },
+  neckVeinCheck: {
+    grade: "acceptable",
+    requiredConditions: ["B評価", "頸静脈所見の確認"],
+    effects: ["循環・呼吸評価を補強", "Primary Surveyを構成する"],
+    stateDelta: { bleeding: -2, shock: -2 }
+  },
+  subcutaneousEmphysemaCheck: {
+    grade: "acceptable",
+    requiredConditions: ["B評価", "胸部外傷所見の確認"],
+    effects: ["胸部損傷評価を補強", "Primary Surveyを構成する"],
+    stateDelta: { bleeding: -2, shock: -2 }
+  },
+  trachealDeviationCheck: {
+    grade: "acceptable",
+    requiredConditions: ["B評価", "気管偏位の確認"],
+    effects: ["緊張性気胸などの鑑別に寄与", "Primary Surveyを構成する"],
+    stateDelta: { bleeding: -2, shock: -2 }
+  },
+  chestPalpation: {
+    grade: "acceptable",
+    requiredConditions: ["B評価", "前胸部触診"],
+    effects: ["外傷所見を確認", "Primary Surveyを構成する"],
+    stateDelta: { bleeding: -2, shock: -2 }
+  },
   bpCuff: {
     grade: "acceptable",
     requiredConditions: ["循環評価が必要"],
@@ -88,6 +120,12 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
     effects: ["心拍数と心電図波形を表示", "循環変化を追跡可能"],
     stateDelta: { shock: -1 }
   },
+  radialPulseCheck: {
+    grade: "acceptable",
+    requiredConditions: ["C評価", "末梢循環の確認"],
+    effects: ["循環評価を補強", "Primary Surveyを構成する"],
+    stateDelta: { bleeding: -2, shock: -2 }
+  },
   iv: {
     grade: "best",
     requiredConditions: ["ショック疑い", "薬剤・輸液投与の必要性"],
@@ -99,7 +137,7 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
     requiredConditions: ["末梢路困難", "中心静脈投与が必要"],
     effects: ["投与経路を確保", "初期対応では時間を消費"],
     stateDelta: { circulation: 4, shock: 4 },
-    requiresCompleted: [{ commandIds: ["iv"], message: "ルート確保が必要" }]
+    requiresCompleted: [vascularAccessRequirement]
   },
   sheath: {
     grade: "acceptable",
@@ -112,50 +150,50 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
     requiredConditions: ["可逆性の重症心肺不全", "抗凝固を許容"],
     effects: ["本症例では出血と遅延を悪化"],
     stateDelta: { bleeding: 20, shock: 20, circulation: -12 },
-    requiresCompleted: [{ commandIds: ["iv"], message: "ルート確保が必要" }]
+    requiresCompleted: [vascularAccessRequirement]
   },
   pericardiocentesis: {
     grade: "harmful",
     requiredConditions: ["心タンポナーデ疑い"],
     effects: ["適応外では侵襲と遅延"],
     stateDelta: { shock: 9, circulation: -6 },
-    requiresCompleted: [{ commandIds: ["iv"], message: "ルート確保が必要" }]
+    requiresCompleted: [vascularAccessRequirement]
   },
   massiveFluid: {
     grade: "best",
     requiredConditions: ["ルート確保完了", "バイタル確認済み", "循環不全"],
     effects: ["循環を一時的に改善", "出血を軽度抑制", "シース確保後は止血効果1.5倍", "希釈性凝固障害のリスク"],
-    stateDelta: { circulation: 9, shock: -5, bleeding: -4 },
+    stateDelta: { bpSys: 5, circulation: 9, shock: -5, bleeding: -4 },
     requiresCompleted: [
-      { commandIds: ["iv"], message: "ルート確保が必要" },
+      vascularAccessRequirement,
       { commandIds: ["ecgMonitor", "bpCuff"], message: "心電図・血圧計の装着が必要" }
     ],
-    bonusDelta: { requiresCompleted: ["sheath"], delta: { bleeding: -2 } }
+    bonusDelta: { requiresCompleted: ["sheath"], delta: { bpSys: 2.5, bleeding: -2 } }
   },
   vasopressor: {
     grade: "harmful",
     requiredConditions: ["ルート確保完了", "輸液反応性が乏しい", "血管拡張性ショック疑い"],
     effects: ["一時的に血圧を上げる", "出血性ショックでは根本対応を遅延"],
-    stateDelta: { bpSys: 8, shock: 9, bleeding: 6 },
-    requiresCompleted: [{ commandIds: ["iv"], message: "ルート確保が必要" }],
+    stateDelta: { bpSys: 12, shock: 7, bleeding: 5 },
+    requiresCompleted: [vascularAccessRequirement],
     conditionalProfile: {
       requiresAnyCompleted: ["massiveFluid", "transfusion"],
       grade: "acceptable",
       effects: ["血圧を一時的に維持", "大量輸液・輸血後の補助として許容", "根本的な出血制御ではない"],
-      stateDelta: { bpSys: 10, shock: 5, bleeding: 3 }
+      stateDelta: { bpSys: 18, shock: 2, bleeding: 2 }
     }
   },
   transfusion: {
     grade: "best",
     requiredConditions: ["ルート確保完了", "バイタル確認済み", "FASTで出血確認済み"],
     effects: ["循環を改善", "ショックを改善", "出血を中等度抑制", "シース確保後は止血効果1.5倍"],
-    stateDelta: { circulation: 18, shock: -14, bleeding: -8 },
+    stateDelta: { bpSys: 10, circulation: 18, shock: -14, bleeding: -8 },
     requiresCompleted: [
-      { commandIds: ["iv"], message: "ルート確保が必要" },
+      vascularAccessRequirement,
       { commandIds: ["ecgMonitor", "bpCuff"], message: "心電図・血圧計の装着が必要" },
       { commandIds: ["fast"], message: "FASTで出血確認が必要" }
     ],
-    bonusDelta: { requiresCompleted: ["sheath"], delta: { bleeding: -4 } }
+    bonusDelta: { requiresCompleted: ["sheath"], delta: { bpSys: 5, bleeding: -4 } }
   },
   ivr: {
     grade: "acceptable",
@@ -174,22 +212,28 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
   fast: {
     grade: "best",
     requiredConditions: ["外傷初期評価", "腹腔内出血の評価"],
-    effects: ["出血源の推定", "治療方針の決定を支援"],
-    stateDelta: { shock: -4 }
+    effects: ["出血源の推定", "治療方針の決定を支援", "Primary Surveyを構成する"],
+    stateDelta: { bleeding: -2, shock: -2 }
+  },
+  consciousnessCheck: {
+    grade: "acceptable",
+    requiredConditions: ["D評価", "意識レベルの確認"],
+    effects: ["神経学的評価を補強", "Primary Surveyを構成する"],
+    stateDelta: { bleeding: -2, shock: -2 }
   },
   sedation: {
     grade: "harmful",
     requiredConditions: ["ルート確保完了", "安全確保", "処置時の鎮静が必要"],
     effects: ["意識と循環を悪化させうる"],
     stateDelta: { shock: 7, consciousness: -8 },
-    requiresCompleted: [{ commandIds: ["iv"], message: "ルート確保が必要" }]
+    requiresCompleted: [vascularAccessRequirement]
   },
   analgesia: {
     grade: "acceptable",
     requiredConditions: ["ルート確保完了", "疼痛あり", "循環への影響を監視可能"],
     effects: ["苦痛を軽減", "出血制御は進まない"],
     stateDelta: { consciousness: 1, shock: 1 },
-    requiresCompleted: [{ commandIds: ["iv"], message: "ルート確保が必要" }]
+    requiresCompleted: [vascularAccessRequirement]
   },
   nerveBlock: {
     grade: "ineffective",
@@ -233,8 +277,8 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
   chestXray: {
     grade: "acceptable",
     requiredConditions: ["外傷初期評価", "胸部外傷の評価"],
-    effects: ["胸部損傷を評価", "出血制御は進まない"],
-    stateDelta: { shock: 1 }
+    effects: ["胸部損傷を評価", "出血制御は進まない", "Primary Surveyを構成する"],
+    stateDelta: { bleeding: -2, shock: -2 }
   }
 };
 
@@ -246,8 +290,19 @@ export const commands: Command[] = commandCatalog.map((command) => ({
 export const winCondition: WinCondition = {
   requiredCommands: ["iv", "massiveFluid", "warming", "transfusion", "fast", "surgeryContact"],
   stabilization: {
-    minBpSys: 75,
-    maxShock: 82
+    minBpSys: 90,
+    maxShock: 60,
+    primarySurveyCommands: [
+      "airwayCheck",
+      "neckVeinCheck",
+      "subcutaneousEmphysemaCheck",
+      "trachealDeviationCheck",
+      "chestPalpation",
+      "radialPulseCheck",
+      "consciousnessCheck",
+      "fast",
+      "chestXray"
+    ]
   }
 };
 
@@ -261,7 +316,8 @@ export const progression: ProgressionRule = {
     consciousness: -0.08,
     oxygenation: -0.04
   },
-  controlledMultiplier: 0.25
+  controlledMultiplier: 0.25,
+  suppressedByCompleted: [{ stateKey: "bleeding", commandIds: ["ivr"] }]
 };
 
 export const lossCondition: LossCondition = {
