@@ -87,20 +87,17 @@ export function progressPatient(
   return deriveVitals(next);
 }
 
-function applyStateDelta(state: PatientState, command: Command): PatientState {
+type StateDelta = Partial<Record<keyof Omit<PatientState, "performed" | "gcs">, number>>;
+
+function applyDelta(state: PatientState, delta: StateDelta): PatientState {
   const next = { ...state };
-  const delta = command.stateDelta ?? {};
 
   for (const [key, value] of Object.entries(delta)) {
-    if (value === undefined) {
-      continue;
-    }
+    if (value === undefined) continue;
 
-    const stateKey = key as keyof typeof delta;
+    const stateKey = key as keyof StateDelta;
     const currentValue = next[stateKey];
-    if (typeof currentValue !== "number") {
-      continue;
-    }
+    if (typeof currentValue !== "number") continue;
 
     if (stateKey === "temp") {
       next.temp = clamp(Number((currentValue + value).toFixed(1)), 34.2, 37.2);
@@ -116,7 +113,32 @@ function applyStateDelta(state: PatientState, command: Command): PatientState {
   return next;
 }
 
-export function applyCommand(state: PatientState, command: Command): PatientState {
+function applyStateDelta(state: PatientState, command: Command): PatientState {
+  return applyDelta(state, command.stateDelta ?? {});
+}
+
+function isConditionalProfileActive(command: Command, state: PatientState, completionTimes: CompletionTimes): boolean {
+  return (
+    command.conditionalProfile !== undefined &&
+    command.conditionalProfile.requiresAnyCompleted.some((id) => isCommandComplete(id, state, completionTimes))
+  );
+}
+
+export function getEffectiveGrade(command: Command, state: PatientState, completionTimes: CompletionTimes): CommandGrade {
+  if (isConditionalProfileActive(command, state, completionTimes)) {
+    return command.conditionalProfile!.grade;
+  }
+  return command.grade;
+}
+
+export function getEffectiveEffects(command: Command, state: PatientState, completionTimes: CompletionTimes): string[] {
+  if (isConditionalProfileActive(command, state, completionTimes)) {
+    return command.conditionalProfile!.effects;
+  }
+  return command.effects;
+}
+
+export function applyCommand(state: PatientState, command: Command, completionTimes: CompletionTimes): PatientState {
   const alreadyDone = state.performed.includes(command.id);
   let next = { ...state };
 
@@ -126,7 +148,22 @@ export function applyCommand(state: PatientState, command: Command): PatientStat
   }
 
   next.performed = [...next.performed, command.id];
-  next = applyStateDelta(next, command);
+
+  const conditionalActive = isConditionalProfileActive(command, state, completionTimes);
+  const activeDelta =
+    conditionalActive && command.conditionalProfile!.stateDelta
+      ? command.conditionalProfile!.stateDelta
+      : command.stateDelta;
+  next = applyDelta(next, activeDelta ?? {});
+
+  if (command.bonusDelta) {
+    const prereqsMet = command.bonusDelta.requiresCompleted.every(
+      (id) => isCommandComplete(id, state, completionTimes)
+    );
+    if (prereqsMet) {
+      next = applyDelta(next, command.bonusDelta.delta);
+    }
+  }
 
   return deriveVitals(next);
 }

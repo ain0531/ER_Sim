@@ -75,6 +75,16 @@ export type CaseCommandProfile = {
     excludeSelf?: boolean;
     message: string;
   };
+  bonusDelta?: {
+    requiresCompleted: CommandId[];
+    delta: Partial<Record<keyof Omit<PatientState, "performed" | "gcs">, number>>;
+  };
+  conditionalProfile?: {
+    requiresAnyCompleted: CommandId[];
+    grade: CommandGrade;
+    effects: string[];
+    stateDelta?: Partial<Record<keyof Omit<PatientState, "performed" | "gcs">, number>>;
+  };
 };
 
 export type Command = BaseCommand & CaseCommandProfile;

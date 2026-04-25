@@ -58,17 +58,23 @@ export const tensionPneumothoraxCommandProfiles: Record<CommandId, CaseCommandPr
   },
   massiveFluid: {
     grade: "ineffective",
-    requiredConditions: ["循環不全", "ルート確保完了"],
+    requiredConditions: ["循環不全", "ルート確保完了", "バイタル確認済み"],
     effects: ["循環改善は限定的", "根本治療を遅らせる"],
     stateDelta: { circulation: 3, shock: 3 },
-    requiresCompleted: [{ commandIds: ["iv"], message: "ルート確保が必要" }]
+    requiresCompleted: [
+      { commandIds: ["iv"], message: "ルート確保が必要" },
+      { commandIds: ["ecgMonitor", "bpCuff"], message: "心電図・血圧計の装着が必要" }
+    ]
   },
   transfusion: {
     grade: "ineffective",
-    requiredConditions: ["大量出血が疑われる"],
+    requiredConditions: ["大量出血が疑われる", "バイタル確認済み"],
     effects: ["この症例では主病態に直結しない"],
     stateDelta: { shock: 2 },
-    requiresCompleted: [{ commandIds: ["iv"], message: "ルート確保が必要" }]
+    requiresCompleted: [
+      { commandIds: ["iv"], message: "ルート確保が必要" },
+      { commandIds: ["ecgMonitor", "bpCuff"], message: "心電図・血圧計の装着が必要" }
+    ]
   },
   fast: {
     grade: "ineffective",
@@ -96,9 +102,10 @@ export const tensionPneumothoraxCommandProfiles: Record<CommandId, CaseCommandPr
   },
   warming: {
     grade: "ineffective",
-    requiredConditions: ["低体温"],
+    requiredConditions: ["体温測定済み", "低体温"],
     effects: ["本症例の主病態には影響しにくい"],
-    stateDelta: { shock: 1 }
+    stateDelta: { shock: 1 },
+    requiresCompleted: [{ commandIds: ["temperatureMeasurement"], message: "体温測定が必要" }]
   }
 };
 
