@@ -1,6 +1,7 @@
 import { Activity, ChevronDown, Clock, Droplets, HeartPulse, Play, RotateCcw, ShieldAlert, Stethoscope } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { gameCases } from "./game/cases";
+import { EcgWaveform } from "./game/EcgWaveform";
 import { commandCategories } from "./game/traumaShockCase";
 import {
   applyCommand,
@@ -213,9 +214,7 @@ export function App() {
 
           {hasEcgMonitor ? (
             <div className="waveform" aria-label="心電図波形">
-              <svg viewBox="0 0 600 80" preserveAspectRatio="none">
-                <polyline points="0,42 48,42 60,18 72,62 88,42 150,42 166,29 178,54 192,42 265,42 280,16 296,65 314,42 390,42 404,28 420,52 438,42 510,42 526,18 544,63 562,42 600,42" />
-              </svg>
+              <EcgWaveform hr={patient.hr} shock={patient.shock} status={status} />
             </div>
           ) : (
             <div className="waveform waveform-off">心電図 未装着</div>
