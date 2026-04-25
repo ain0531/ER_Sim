@@ -15,9 +15,9 @@ export const initialPatient: PatientState = {
   airway: 84,
   breathing: 78,
   circulation: 34,
-  bleeding: 82,
+  bleeding: 72,
   oxygenation: 68,
-  shock: 70,
+  shock: 62,
   performed: []
 };
 
@@ -123,33 +123,45 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
   },
   massiveFluid: {
     grade: "best",
-    requiredConditions: ["ルート確保完了", "循環不全"],
-    effects: ["循環を一時的に改善", "希釈性凝固障害のリスク"],
-    stateDelta: { circulation: 9, shock: -5 },
-    requiresCompleted: [{ commandIds: ["iv"], message: "ルート確保が必要" }]
+    requiredConditions: ["ルート確保完了", "バイタル確認済み", "循環不全"],
+    effects: ["循環を一時的に改善", "出血を軽度抑制", "シース確保後は止血効果1.5倍", "希釈性凝固障害のリスク"],
+    stateDelta: { circulation: 9, shock: -5, bleeding: -4 },
+    requiresCompleted: [
+      { commandIds: ["iv"], message: "ルート確保が必要" },
+      { commandIds: ["ecgMonitor", "bpCuff"], message: "心電図・血圧計の装着が必要" }
+    ],
+    bonusDelta: { requiresCompleted: ["sheath"], delta: { bleeding: -2 } }
   },
   vasopressor: {
     grade: "harmful",
     requiredConditions: ["ルート確保完了", "輸液反応性が乏しい", "血管拡張性ショック疑い"],
     effects: ["一時的に血圧を上げる", "出血性ショックでは根本対応を遅延"],
     stateDelta: { bpSys: 8, shock: 9, bleeding: 6 },
-    requiresCompleted: [{ commandIds: ["iv"], message: "ルート確保が必要" }]
+    requiresCompleted: [{ commandIds: ["iv"], message: "ルート確保が必要" }],
+    conditionalProfile: {
+      requiresAnyCompleted: ["massiveFluid", "transfusion"],
+      grade: "acceptable",
+      effects: ["血圧を一時的に維持", "大量輸液・輸血後の補助として許容", "根本的な出血制御ではない"],
+      stateDelta: { bpSys: 10, shock: 5, bleeding: 3 }
+    }
   },
   transfusion: {
     grade: "best",
-    requiredConditions: ["ルート確保完了", "FASTで出血確認済み"],
-    effects: ["輸血確保に時間を要する", "循環を改善", "ショックを改善"],
-    stateDelta: { circulation: 18, shock: -14, bleeding: -6 },
+    requiredConditions: ["ルート確保完了", "バイタル確認済み", "FASTで出血確認済み"],
+    effects: ["循環を改善", "ショックを改善", "出血を中等度抑制", "シース確保後は止血効果1.5倍"],
+    stateDelta: { circulation: 18, shock: -14, bleeding: -8 },
     requiresCompleted: [
       { commandIds: ["iv"], message: "ルート確保が必要" },
+      { commandIds: ["ecgMonitor", "bpCuff"], message: "心電図・血圧計の装着が必要" },
       { commandIds: ["fast"], message: "FASTで出血確認が必要" }
-    ]
+    ],
+    bonusDelta: { requiresCompleted: ["sheath"], delta: { bleeding: -4 } }
   },
   ivr: {
     grade: "acceptable",
     requiredConditions: ["シース確保済み", "血管内治療の適応"],
-    effects: ["出血制御の選択肢", "選択後も他処置を継続可能"],
-    stateDelta: { bleeding: -12, shock: -5 },
+    effects: ["出血を最大限抑制", "選択後も他処置を継続可能"],
+    stateDelta: { bleeding: -16, shock: -5 },
     requiresCompleted: [{ commandIds: ["sheath"], message: "シース確保が必要" }]
   },
   surgeryContact: {
@@ -193,21 +205,24 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
   },
   warming: {
     grade: "best",
-    requiredConditions: ["低体温または大量出血"],
+    requiredConditions: ["体温測定済み", "低体温または大量出血"],
     effects: ["低体温を抑制", "外傷死の三徴を軽減"],
-    stateDelta: { temp: 0.2, shock: -4 }
+    stateDelta: { temp: 0.2, shock: -4 },
+    requiresCompleted: [{ commandIds: ["temperatureMeasurement"], message: "体温測定が必要" }]
   },
   thermogardWarming: {
     grade: "acceptable",
-    requiredConditions: ["高度低体温", "中心静脈アクセス可能"],
+    requiredConditions: ["体温測定済み", "高度低体温", "中心静脈アクセス可能"],
     effects: ["体温を上げる", "留置に時間を要する"],
-    stateDelta: { temp: 0.5, shock: -2 }
+    stateDelta: { temp: 0.5, shock: -2 },
+    requiresCompleted: [{ commandIds: ["temperatureMeasurement"], message: "体温測定が必要" }]
   },
   thermogardCooling: {
     grade: "harmful",
-    requiredConditions: ["体温管理療法の適応"],
+    requiredConditions: ["体温測定済み", "体温管理療法の適応"],
     effects: ["本症例では低体温と凝固障害を悪化"],
-    stateDelta: { temp: -0.6, shock: 12, bleeding: 8 }
+    stateDelta: { temp: -0.6, shock: 12, bleeding: 8 },
+    requiresCompleted: [{ commandIds: ["temperatureMeasurement"], message: "体温測定が必要" }]
   },
   plainCt: {
     grade: "harmful",

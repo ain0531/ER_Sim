@@ -8,6 +8,8 @@ import {
   commandTone,
   formatTime,
   getCommandBlockReason,
+  getEffectiveEffects,
+  getEffectiveGrade,
   getOutcome,
   gradeLabel,
   isCommandComplete,
@@ -115,18 +117,20 @@ export function App() {
     }
 
     setPatient((current) => {
-      const next = applyCommand(current, command);
+      const next = applyCommand(current, command, completionTimes);
       const nextOutcome = getOutcome(next, completionTimes, winCondition, lossCondition);
       setStatus(nextOutcome);
       if (command.blocksCategory !== false) {
         setCategoryLocks((currentLocks) => ({ ...currentLocks, [command.category]: current.elapsed + command.duration }));
       }
       setCompletionTimes((currentTimes) => ({ ...currentTimes, [command.id]: current.elapsed + command.duration }));
+      const effectiveGrade = getEffectiveGrade(command, current, completionTimes);
+      const effectiveEffects = getEffectiveEffects(command, current, completionTimes);
       setLog((entries) => [
         {
           time: next.elapsed,
-          message: `${command.label}を実施。${gradeLabel(command.grade)}: ${command.effects.join(" / ")}`,
-          tone: commandTone(command.grade)
+          message: `${command.label}を実施。${gradeLabel(effectiveGrade)}: ${effectiveEffects.join(" / ")}`,
+          tone: commandTone(effectiveGrade)
         },
         ...entries
       ]);
@@ -339,22 +343,24 @@ export function App() {
                         const lockedUntil = categoryLocks[command.category] ?? 0;
                         const categoryLocked = command.blocksCategory !== false && lockedUntil > patient.elapsed;
                         const blockReason = getCommandBlockReason(command, patient, completionTimes, winCondition);
+                        const effectiveGrade = getEffectiveGrade(command, patient, completionTimes);
+                        const effectiveEffects = getEffectiveEffects(command, patient, completionTimes);
                         return (
                           <button
-                            className={`command command-${command.grade}`}
+                            className={`command command-${effectiveGrade}`}
                             disabled={status !== "running" || done || categoryLocked || Boolean(blockReason)}
                             key={command.id}
                             onClick={() => execute(command)}
-                            title={`必要条件: ${command.requiredConditions.join(" / ")}\n影響: ${command.effects.join(" / ")}`}
+                            title={`必要条件: ${command.requiredConditions.join(" / ")}\n影響: ${effectiveEffects.join(" / ")}`}
                           >
                             <span>{command.label}</span>
                             <small>
-                              {gradeLabel(command.grade)} / {command.duration}秒
+                              {gradeLabel(effectiveGrade)} / {command.duration}秒
                             </small>
                             {categoryLocked ? <small className="lock-note">完遂待ち {formatTime(lockedUntil - patient.elapsed)}</small> : null}
                             {blockReason ? <small className="lock-note">{blockReason}</small> : null}
                             <em>条件: {command.requiredConditions.join(" / ")}</em>
-                            <em>影響: {command.effects.join(" / ")}</em>
+                            <em>影響: {effectiveEffects.join(" / ")}</em>
                           </button>
                         );
                       })}
