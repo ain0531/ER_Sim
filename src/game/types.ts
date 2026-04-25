@@ -90,6 +90,7 @@ export type CaseCommandProfile = {
   };
   conditionalProfile?: {
     requiresAnyCompleted: CommandId[];
+    requiresDiagnosisId?: "massiveHemorrhage";
     grade: CommandGrade;
     effects: string[];
     stateDelta?: Partial<Record<keyof Omit<PatientState, "performed" | "gcs">, number>>;
@@ -102,12 +103,22 @@ export type LogEntry = {
   time: number;
   message: string;
   tone: "neutral" | "good" | "warn" | "bad";
+  kind?: "system" | "action";
 };
 
 export type CompletionTimes = Partial<Record<CommandId, number>>;
 
 export type WinCondition = {
   requiredCommands: CommandId[];
+  diagnosisRule?: {
+    id: "massiveHemorrhage";
+    shockVital: {
+      maxBpSys: number;
+      minHr: number;
+    };
+    requiresCompleted: CommandId[];
+    additionalRequiredCommands: CommandId[];
+  };
   stabilization: {
     minBpSys: number;
     maxShock: number;
@@ -140,6 +151,7 @@ export type GameCase = {
     summary: string;
     emsBriefs: { male: string; female: string };
     initialLogs: { male: string; female: string };
+    inspectionFindings?: Partial<Record<CommandId, string>>;
   };
   initialPatient: PatientState;
   commands: Command[];

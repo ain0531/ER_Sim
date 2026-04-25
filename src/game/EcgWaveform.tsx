@@ -71,6 +71,7 @@ export function EcgWaveform({ hr, shock, status }: Props) {
   const rafRef = useRef<number>(0);
   const startRef = useRef(performance.now());
   const lostAtRef = useRef<number | null>(null);
+  const frozenAtRef = useRef<number | null>(null);
 
   // Mirror props into refs so the animation loop always reads the latest values
   // without needing to restart the loop on every prop change
@@ -92,6 +93,12 @@ export function EcgWaveform({ hr, shock, status }: Props) {
     }
     if (status !== "lost") {
       lostAtRef.current = null;
+    }
+    if ((status === "won" || status === "lost") && statusRef.current === "running") {
+      frozenAtRef.current = performance.now();
+    }
+    if (status === "ready" || status === "running") {
+      frozenAtRef.current = null;
     }
     statusRef.current = status;
   }, [status]);
@@ -131,7 +138,8 @@ export function EcgWaveform({ hr, shock, status }: Props) {
       const lostSec = lostAtRef.current !== null ? (now - lostAtRef.current) / 1000 : 0;
       const rhythm = getRhythm(shockRef.current, statusRef.current, lostSec);
       const rr = getRr(hrRef.current, rhythm);
-      const currentT = (now - startRef.current) / 1000;
+      const renderNow = frozenAtRef.current ?? now;
+      const currentT = (renderNow - startRef.current) / 1000;
 
       ctx.clearRect(0, 0, W, H);
 

@@ -46,6 +46,30 @@ export function isCommandComplete(commandId: CommandId, state: PatientState, com
   return state.performed.includes(commandId) && (completionTimes[commandId] ?? Number.POSITIVE_INFINITY) <= state.elapsed;
 }
 
+export function isDiagnosisMet(state: PatientState, completionTimes: CompletionTimes, winCondition: WinCondition) {
+  const diagnosisRule = winCondition.diagnosisRule;
+  if (!diagnosisRule) {
+    return false;
+  }
+
+  const hasRequiredData = diagnosisRule.requiresCompleted.every((id) => isCommandComplete(id, state, completionTimes));
+  const hasShockVital = state.bpSys <= diagnosisRule.shockVital.maxBpSys && state.hr >= diagnosisRule.shockVital.minHr;
+  return hasRequiredData && hasShockVital;
+}
+
+export function getActiveRequiredCommands(state: PatientState, completionTimes: CompletionTimes, winCondition: WinCondition) {
+  if (!winCondition.diagnosisRule) {
+    return winCondition.requiredCommands;
+  }
+
+  const diagnosisMet = isDiagnosisMet(state, completionTimes, winCondition);
+  const activeCommands = diagnosisMet
+    ? [...winCondition.requiredCommands, ...winCondition.diagnosisRule.additionalRequiredCommands]
+    : winCondition.requiredCommands;
+
+  return [...new Set(activeCommands)];
+}
+
 function applyProgressionDelta(
   state: PatientState,
   completionTimes: CompletionTimes,
@@ -91,7 +115,7 @@ export function progressPatient(
   winCondition: WinCondition,
   progression: ProgressionRule
 ): PatientState {
-  const controlled = winCondition.requiredCommands.every((id) => isCommandComplete(id, state, completionTimes));
+  const controlled = getActiveRequiredCommands(state, completionTimes, winCondition).every((id) => isCommandComplete(id, state, completionTimes));
   const multiplier = controlled ? progression.controlledMultiplier : 1;
   const next = applyProgressionDelta({ ...state, elapsed: state.elapsed + 1 }, completionTimes, progression, multiplier);
 
@@ -131,7 +155,19 @@ function applyStateDelta(state: PatientState, command: Command): PatientState {
 function isConditionalProfileActive(command: Command, state: PatientState, completionTimes: CompletionTimes): boolean {
   return (
     command.conditionalProfile !== undefined &&
-    command.conditionalProfile.requiresAnyCompleted.some((id) => isCommandComplete(id, state, completionTimes))
+    (command.conditionalProfile.requiresAnyCompleted.length === 0 ||
+      command.conditionalProfile.requiresAnyCompleted.some((id) => isCommandComplete(id, state, completionTimes))) &&
+    (command.conditionalProfile.requiresDiagnosisId === undefined ||
+      (command.conditionalProfile.requiresDiagnosisId === "massiveHemorrhage" && isDiagnosisMet(state, completionTimes, {
+        requiredCommands: [],
+        diagnosisRule: {
+          id: "massiveHemorrhage",
+          shockVital: { maxBpSys: 90, minHr: 120 },
+          requiresCompleted: ["fast"],
+          additionalRequiredCommands: []
+        },
+        stabilization: { minBpSys: 0, maxShock: 100 }
+      })))
   );
 }
 
@@ -187,7 +223,7 @@ export function getOutcome(
   winCondition: WinCondition,
   lossCondition: LossCondition
 ): GameStatus {
-  if (winCondition.requiredCommands.every((id) => isCommandComplete(id, state, completionTimes))) {
+  if (getActiveRequiredCommands(state, completionTimes, winCondition).every((id) => isCommandComplete(id, state, completionTimes))) {
     return "won";
   }
 
@@ -229,8 +265,8 @@ export function getCommandBlockReason(command: Command, state: PatientState, com
 
   if (command.requiresWinProgress) {
     const requirementsBeforeCommand = command.requiresWinProgress.excludeSelf
-      ? winCondition.requiredCommands.filter((id) => id !== command.id)
-      : winCondition.requiredCommands;
+      ? getActiveRequiredCommands(state, completionTimes, winCondition).filter((id) => id !== command.id)
+      : getActiveRequiredCommands(state, completionTimes, winCondition);
     const completedBeforeCommand = requirementsBeforeCommand.filter((id) => isCommandComplete(id, state, completionTimes)).length;
     if (completedBeforeCommand / requirementsBeforeCommand.length < command.requiresWinProgress.minRatio) {
       return command.requiresWinProgress.message;

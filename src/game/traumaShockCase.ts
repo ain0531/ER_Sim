@@ -43,10 +43,17 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
     stateDelta: { oxygenation: 2, shock: 1 }
   },
   intubation: {
-    grade: "ineffective",
-    requiredConditions: ["気道不安定", "換気不全", "高度意識障害"],
-    effects: ["酸素化を少し改善", "出血制御を遅らせる"],
-    stateDelta: { oxygenation: 5, shock: 4 }
+    grade: "harmful",
+    requiredConditions: ["大量出血診断後", "気道保護", "手術前管理"],
+    effects: ["診断前の挿管で出血制御を遅らせる", "有害手として扱う"],
+    stateDelta: { oxygenation: 3, shock: 8, circulation: -4 },
+    conditionalProfile: {
+      requiresAnyCompleted: [],
+      requiresDiagnosisId: "massiveHemorrhage",
+      grade: "best",
+      effects: ["気道を保護し手術前管理を進める", "大量出血診断後の最善手"],
+      stateDelta: { oxygenation: 8, shock: -2, circulation: 2 }
+    }
   },
   oxygen: {
     grade: "acceptable",
@@ -163,12 +170,12 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
     grade: "best",
     requiredConditions: ["ルート確保完了", "バイタル確認済み", "循環不全"],
     effects: ["循環を一時的に改善", "出血を軽度抑制", "シース確保後は止血効果1.5倍", "希釈性凝固障害のリスク"],
-    stateDelta: { bpSys: 5, circulation: 9, shock: -5, bleeding: -4 },
+    stateDelta: { bpSys: 9, circulation: 9, shock: -5, bleeding: -4 },
     requiresCompleted: [
       vascularAccessRequirement,
       { commandIds: ["ecgMonitor", "bpCuff"], message: "心電図・血圧計の装着が必要" }
     ],
-    bonusDelta: { requiresCompleted: ["sheath"], delta: { bpSys: 2.5, bleeding: -2 } }
+    bonusDelta: { requiresCompleted: ["sheath"], delta: { bpSys: 4.5, bleeding: -2 } }
   },
   vasopressor: {
     grade: "harmful",
@@ -187,20 +194,27 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
     grade: "best",
     requiredConditions: ["ルート確保完了", "バイタル確認済み", "FASTで出血確認済み"],
     effects: ["循環を改善", "ショックを改善", "出血を中等度抑制", "シース確保後は止血効果1.5倍"],
-    stateDelta: { bpSys: 10, circulation: 18, shock: -14, bleeding: -8 },
+    stateDelta: { bpSys: 18, circulation: 18, shock: -14, bleeding: -8 },
     requiresCompleted: [
       vascularAccessRequirement,
       { commandIds: ["ecgMonitor", "bpCuff"], message: "心電図・血圧計の装着が必要" },
       { commandIds: ["fast"], message: "FASTで出血確認が必要" }
     ],
-    bonusDelta: { requiresCompleted: ["sheath"], delta: { bpSys: 5, bleeding: -4 } }
+    bonusDelta: { requiresCompleted: ["sheath"], delta: { bpSys: 9, bleeding: -4 } }
   },
   ivr: {
-    grade: "acceptable",
-    requiredConditions: ["シース確保済み", "血管内治療の適応"],
-    effects: ["出血を最大限抑制", "選択後も他処置を継続可能"],
-    stateDelta: { bleeding: -16, shock: -5 },
-    requiresCompleted: [{ commandIds: ["sheath"], message: "シース確保が必要" }]
+    grade: "harmful",
+    requiredConditions: ["大量出血診断後", "シース確保済み", "血管内治療の適応"],
+    effects: ["理由なくIVRを進める", "診断前は有害手として扱う"],
+    stateDelta: { shock: 6, circulation: -4 },
+    requiresCompleted: [{ commandIds: ["sheath"], message: "シース確保が必要" }],
+    conditionalProfile: {
+      requiresAnyCompleted: [],
+      requiresDiagnosisId: "massiveHemorrhage",
+      grade: "acceptable",
+      effects: ["出血を最大限抑制", "選択後も他処置を継続可能"],
+      stateDelta: { bpSys: 12, bleeding: -16, shock: -5 }
+    }
   },
   surgeryContact: {
     grade: "best",
@@ -288,7 +302,16 @@ export const commands: Command[] = commandCatalog.map((command) => ({
 }));
 
 export const winCondition: WinCondition = {
-  requiredCommands: ["iv", "massiveFluid", "warming", "transfusion", "fast", "surgeryContact"],
+  requiredCommands: ["iv", "warming", "fast"],
+  diagnosisRule: {
+    id: "massiveHemorrhage",
+    shockVital: {
+      maxBpSys: 90,
+      minHr: 120
+    },
+    requiresCompleted: ["fast"],
+    additionalRequiredCommands: ["massiveFluid", "transfusion", "intubation", "surgeryContact"]
+  },
   stabilization: {
     minBpSys: 90,
     maxShock: 60,
@@ -341,6 +364,17 @@ export const traumaShockCase: GameCase = {
     initialLogs: {
       male: "40代男性、交通外傷。顔面蒼白、冷汗あり。初期評価を開始してください。",
       female: "40代女性、交通外傷。顔面蒼白、冷汗あり。初期評価を開始してください。"
+    },
+    inspectionFindings: {
+      airwayCheck: "気道は開通している。",
+      neckVeinCheck: "頸静脈怒張は明らかでない。",
+      subcutaneousEmphysemaCheck: "皮下気腫は触れない。",
+      trachealDeviationCheck: "気管偏位は認めない。",
+      chestPalpation: "前胸部に明らかな不安定性はない。",
+      radialPulseCheck: "橈骨動脈は微弱に触知する。",
+      consciousnessCheck: "呼びかけで開眼し、受け答えはやや緩慢。",
+      fast: "FASTで腹腔内液体貯留を認める。",
+      chestXray: "胸部X線で明らかな緊張性気胸所見はない。"
     }
   },
   initialPatient,

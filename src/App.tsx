@@ -1,5 +1,5 @@
 import { Activity, ChevronDown, Clock, Droplets, HeartPulse, Play, RotateCcw, ShieldAlert, Stethoscope } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { gameCases } from "./game/cases";
 import { EcgWaveform } from "./game/EcgWaveform";
 import { commandCategories } from "./game/traumaShockCase";
@@ -7,9 +7,11 @@ import {
   applyCommand,
   commandTone,
   formatTime,
+  getActiveRequiredCommands,
   getCommandBlockReason,
   getEffectiveEffects,
   getEffectiveGrade,
+  isDiagnosisMet,
   getOutcome,
   gradeLabel,
   isCommandComplete,
@@ -28,6 +30,19 @@ function getFaceCell(
   return { col, row };
 }
 
+function dedupeMessages(items: string[]) {
+  return [...new Set(items)];
+}
+
+function getLogSummary(command: Command, effects: string[]) {
+  const summary = effects[0] ?? `${command.label}を実施`;
+  return `${command.label}: ${summary}`;
+}
+
+function clampScore(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
 export function App() {
   const [activeCase, setActiveCase] = useState<GameCase>(gameCases[0]);
   const { commands, initialPatient, lossCondition, progression, winCondition } = activeCase;
@@ -40,8 +55,9 @@ export function App() {
   const [debugOpen, setDebugOpen] = useState(false);
   const [gender, setGender] = useState<"male" | "female">(() => (Math.random() < 0.5 ? "male" : "female"));
   const [log, setLog] = useState<LogEntry[]>(() => [
-    { time: 0, message: activeCase.metadata.initialLogs[gender], tone: "neutral" }
+    { time: 0, message: activeCase.metadata.initialLogs[gender], tone: "neutral", kind: "system" }
   ]);
+  const logListRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (status !== "running") {
@@ -62,9 +78,19 @@ export function App() {
     return () => window.clearInterval(timer);
   }, [completionTimes, status]);
 
+  useEffect(() => {
+    if (!logListRef.current) {
+      return;
+    }
+    logListRef.current.scrollTop = logListRef.current.scrollHeight;
+  }, [log]);
+
   const outcome = useMemo(() => getOutcome(patient, completionTimes, winCondition, lossCondition), [completionTimes, lossCondition, patient, winCondition]);
-  const remaining = Math.max(0, 360 - patient.elapsed);
-  const requiredCommands = winCondition.requiredCommands;
+  const remaining = Math.max(0, lossCondition.maxElapsed - patient.elapsed);
+  const initialRequiredCommands = winCondition.requiredCommands;
+  const postDiagnosisRequiredCommands = winCondition.diagnosisRule?.additionalRequiredCommands ?? [];
+  const requiredCommands = getActiveRequiredCommands(patient, completionTimes, winCondition);
+  const diagnosisMet = isDiagnosisMet(patient, completionTimes, winCondition);
   const completedRequirements = requiredCommands.filter((id) => isCommandComplete(id, patient, completionTimes)).length;
   const bpStable = patient.bpSys >= winCondition.stabilization.minBpSys;
   const shockStable = patient.shock < winCondition.stabilization.maxShock;
@@ -75,12 +101,34 @@ export function App() {
   const hasBpCuff = isCommandComplete("bpCuff", patient, completionTimes);
   const hasEcgMonitor = isCommandComplete("ecgMonitor", patient, completionTimes);
   const hasTemperatureMeasurement = isCommandComplete("temperatureMeasurement", patient, completionTimes);
+  const diagnosisCandidateVisible =
+    winCondition.diagnosisRule !== undefined &&
+    isCommandComplete("fast", patient, completionTimes) &&
+    hasBpCuff &&
+    hasEcgMonitor;
+  const inspectionFindings = activeCase.metadata.inspectionFindings ?? {};
+  const visibleInspectionFindings = Object.entries(inspectionFindings).filter(([id]) =>
+    isCommandComplete(id as Command["id"], patient, completionTimes)
+  );
   const faceCell = status === "won" && bpStable && shockStable && primarySurveyDone ? getFaceCell(initialPatient, "ready") : getFaceCell(patient, status);
   const faceImageUrl = `/images/${gender === "female" ? "patient_woman_face" : "patient_man_face"}.png`;
+  const stabilizationChecks = [bpStable, shockStable, ...(primarySurveyCommands.length > 0 ? [primarySurveyDone] : [])];
+  const stabilizationRate = stabilizationChecks.filter(Boolean).length / stabilizationChecks.length;
+  const actionLogs = log.filter((entry) => entry.kind === "action");
+  const commandQualityRaw = actionLogs.reduce((total, entry) => {
+    if (entry.tone === "good") return total + 5;
+    if (entry.tone === "neutral") return total + 2;
+    if (entry.tone === "bad") return total - 6;
+    return total;
+  }, 15);
+  const timeScore = 35 * (remaining / lossCondition.maxElapsed);
+  const stabilizationScore = 35 * stabilizationRate;
+  const commandScore = Math.max(0, Math.min(30, commandQualityRaw));
+  const totalScore = clampScore(timeScore + stabilizationScore + commandScore);
 
   function start() {
     setStatus("running");
-    setLog((current) => [{ time: 0, message: "シミュレーション開始。出血性ショックとして初期対応を進めます。", tone: "neutral" }, ...current]);
+    setLog((current) => [...current, { time: 0, message: "シミュレーション開始。出血性ショックとして初期対応を進めます。", tone: "neutral", kind: "system" }]);
   }
 
   function reset() {
@@ -95,7 +143,7 @@ export function App() {
     setShuffledCommands(shuffleCommands(nextCase.commands));
     setCategoryLocks({});
     setCompletionTimes({});
-    setLog([{ time: 0, message: nextCase.metadata.initialLogs[nextGender], tone: "neutral" }]);
+    setLog([{ time: 0, message: nextCase.metadata.initialLogs[nextGender], tone: "neutral", kind: "system" }]);
   }
 
   function selectCase(caseId: string) {
@@ -129,14 +177,15 @@ export function App() {
       }
       setCompletionTimes(nextCompletionTimes);
       const effectiveGrade = getEffectiveGrade(command, current, completionTimes);
-      const effectiveEffects = getEffectiveEffects(command, current, completionTimes);
+      const effectiveEffects = dedupeMessages(getEffectiveEffects(command, current, completionTimes));
       setLog((entries) => [
+        ...entries.filter((entry) => !(entry.time === next.elapsed && entry.message === getLogSummary(command, effectiveEffects))),
         {
           time: next.elapsed,
-          message: `${command.label}を実施。${gradeLabel(effectiveGrade)}: ${effectiveEffects.join(" / ")}`,
-          tone: commandTone(effectiveGrade)
-        },
-        ...entries
+          message: getLogSummary(command, effectiveEffects),
+          tone: commandTone(effectiveGrade),
+          kind: "action"
+        }
       ]);
       return next;
     });
@@ -187,7 +236,7 @@ export function App() {
               <div className="leg right" />
             </div>
             <div className="stretcher" />
-            <div
+          <div
               className="patient-face"
               aria-label="患者の顔色・表情"
               style={{
@@ -196,6 +245,25 @@ export function App() {
                 backgroundPosition: `${faceCell.col * 50}% ${faceCell.row * 50}%`,
               }}
             />
+          </div>
+
+          <div className="finding-panel">
+            <div className="panel-title">
+              <Stethoscope size={18} />
+              <span>確認結果</span>
+            </div>
+            <div className="finding-list">
+              {visibleInspectionFindings.length > 0 ? (
+                visibleInspectionFindings.map(([id, finding]) => (
+                  <p key={id}>
+                    <strong>{commands.find((command) => command.id === id)?.label ?? id}</strong>
+                    <span>{finding}</span>
+                  </p>
+                ))
+              ) : (
+                <p className="finding-empty">確認結果はまだありません。</p>
+              )}
+            </div>
           </div>
 
           <div className="objective-panel">
@@ -212,7 +280,8 @@ export function App() {
               </div>
             </div>
             <div className="objective-group-title">必須処置</div>
-            {requiredCommands.map((id) => {
+            <div className="objective-group-title">大量出血診断前</div>
+            {initialRequiredCommands.map((id) => {
               const command = commands.find((item) => item.id === id)!;
               const done = isCommandComplete(id, patient, completionTimes);
               return (
@@ -221,6 +290,28 @@ export function App() {
                 </p>
               );
             })}
+            {diagnosisCandidateVisible ? (
+              <>
+                <div className="objective-group-title">大量出血</div>
+                <p className={diagnosisMet ? "done" : ""}>
+                  {diagnosisMet ? "診断済み" : "未診断"}: 頻脈＋低血圧＋FAST陽性
+                </p>
+                {diagnosisMet ? (
+                  <>
+                    <div className="objective-group-title">大量出血診断後</div>
+                    {postDiagnosisRequiredCommands.map((id) => {
+                      const command = commands.find((item) => item.id === id)!;
+                      const done = isCommandComplete(id, patient, completionTimes);
+                      return (
+                        <p className={done ? "done" : ""} key={id}>
+                          {done ? "完了" : "未実施"}: {command.label}
+                        </p>
+                      );
+                    })}
+                  </>
+                ) : null}
+              </>
+            ) : null}
             <div className="objective-group-title">安定化条件</div>
             <p className={bpStable ? "done" : ""}>
               {bpStable ? "達成" : "未達成"}: SBP {winCondition.stabilization.minBpSys}以上
@@ -298,9 +389,25 @@ export function App() {
             </div>
           ) : null}
 
+          <div className="score-panel" aria-label="評価スコア">
+            <span className="score-label">評価スコア</span>
+            {status === "running" || status === "ready" ? (
+              <strong className="score-pending">評価中</strong>
+            ) : (
+              <>
+                <strong className="score-value">{totalScore}</strong>
+                <div className="score-breakdown">
+                  <span>残り時間 {Math.round(timeScore)}点</span>
+                  <span>安定化 {Math.round(stabilizationScore)}点</span>
+                  <span>処置評価 {Math.round(commandScore)}点</span>
+                </div>
+              </>
+            )}
+          </div>
+
           <div className="log-panel">
             <h2>処置ログ</h2>
-            <div className="log-list">
+            <div className="log-list" ref={logListRef}>
               {log.map((entry, index) => (
                 <p className={`log-${entry.tone}`} key={`${entry.time}-${index}`}>
                   <span>{formatTime(entry.time)}</span>
@@ -353,7 +460,7 @@ export function App() {
                         const categoryLocked = command.blocksCategory !== false && lockedUntil > patient.elapsed;
                         const blockReason = getCommandBlockReason(command, patient, completionTimes, winCondition);
                         const effectiveGrade = getEffectiveGrade(command, patient, completionTimes);
-                        const effectiveEffects = getEffectiveEffects(command, patient, completionTimes);
+                        const effectiveEffects = dedupeMessages(getEffectiveEffects(command, patient, completionTimes));
                         return (
                           <button
                             className={`command command-${effectiveGrade}`}

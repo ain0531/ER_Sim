@@ -196,6 +196,17 @@ export const tensionPneumothoraxCase: GameCase = {
     initialLogs: {
       male: "30代男性、胸部外傷。呼吸苦と低酸素が進行しています。緊張性気胸を念頭に初期対応してください。",
       female: "30代女性、胸部外傷。呼吸苦と低酸素が進行しています。緊張性気胸を念頭に初期対応してください。"
+    },
+    inspectionFindings: {
+      airwayCheck: "気道は開通している。",
+      neckVeinCheck: "頸静脈怒張を認める。",
+      subcutaneousEmphysemaCheck: "右前胸部から頸部に皮下気腫を触れる。",
+      trachealDeviationCheck: "気管は左偏位している。",
+      chestPalpation: "右前胸部に圧痛と握雪感を認める。",
+      radialPulseCheck: "橈骨動脈は微弱である。",
+      consciousnessCheck: "不穏だが呼名に応答する。",
+      chestXray: "右肺虚脱と縦隔偏位を認める。",
+      fast: "FASTで腹腔内出血を示す所見は乏しい。"
     }
   },
   initialPatient,
