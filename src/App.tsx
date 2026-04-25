@@ -14,7 +14,17 @@ import {
   progressPatient,
   shuffleCommands
 } from "./game/simulation";
-import type { Command, CommandCategoryId, CompletionTimes, GameCase, GameStatus, LogEntry } from "./game/types";
+import type { Command, CommandCategoryId, CompletionTimes, GameCase, GameStatus, LogEntry, PatientState } from "./game/types";
+
+function getFaceCell(
+  patient: PatientState,
+  status: GameStatus
+): { col: 0 | 1 | 2; row: 0 | 1 | 2 } {
+  if (status === "lost") return { col: 2, row: 2 };
+  const col: 0 | 1 | 2 = patient.shock < 45 ? 0 : patient.shock < 80 ? 1 : 2;
+  const row: 0 | 1 | 2 = patient.consciousness >= 82 ? 0 : patient.consciousness >= 55 ? 1 : 2;
+  return { col, row };
+}
 
 export function App() {
   const [activeCase, setActiveCase] = useState<GameCase>(gameCases[0]);
@@ -26,8 +36,9 @@ export function App() {
   const [categoryLocks, setCategoryLocks] = useState<Partial<Record<CommandCategoryId, number>>>({});
   const [completionTimes, setCompletionTimes] = useState<CompletionTimes>({});
   const [debugOpen, setDebugOpen] = useState(false);
-  const [log, setLog] = useState<LogEntry[]>([
-    { time: 0, message: activeCase.metadata.initialLog, tone: "neutral" }
+  const [gender, setGender] = useState<"male" | "female">(() => (Math.random() < 0.5 ? "male" : "female"));
+  const [log, setLog] = useState<LogEntry[]>(() => [
+    { time: 0, message: activeCase.metadata.initialLogs[gender], tone: "neutral" }
   ]);
 
   useEffect(() => {
@@ -59,6 +70,8 @@ export function App() {
   const hasBpCuff = isCommandComplete("bpCuff", patient, completionTimes);
   const hasEcgMonitor = isCommandComplete("ecgMonitor", patient, completionTimes);
   const hasTemperatureMeasurement = isCommandComplete("temperatureMeasurement", patient, completionTimes);
+  const faceCell = getFaceCell(patient, status);
+  const faceImageUrl = `/images/${gender === "female" ? "patient_woman_face" : "patient_man_face"}.png`;
 
   function start() {
     setStatus("running");
@@ -66,17 +79,18 @@ export function App() {
   }
 
   function reset() {
-    resetCase(activeCase);
+    resetCase(activeCase, Math.random() < 0.5 ? "male" : "female");
   }
 
-  function resetCase(nextCase: GameCase) {
+  function resetCase(nextCase: GameCase, nextGender: "male" | "female") {
+    setGender(nextGender);
     setPatient(nextCase.initialPatient);
     setStatus("ready");
     setOpenCategories([]);
     setShuffledCommands(shuffleCommands(nextCase.commands));
     setCategoryLocks({});
     setCompletionTimes({});
-    setLog([{ time: 0, message: nextCase.metadata.initialLog, tone: "neutral" }]);
+    setLog([{ time: 0, message: nextCase.metadata.initialLogs[nextGender], tone: "neutral" }]);
   }
 
   function selectCase(caseId: string) {
@@ -86,7 +100,7 @@ export function App() {
     }
 
     setActiveCase(nextCase);
-    resetCase(nextCase);
+    resetCase(nextCase, Math.random() < 0.5 ? "male" : "female");
   }
 
   function execute(command: Command) {
@@ -149,7 +163,7 @@ export function App() {
         <aside className="patient-bay">
           <div className="ems-brief">
             <span>救急隊情報</span>
-            <p>{activeCase.metadata.emsBrief}</p>
+            <p>{activeCase.metadata.emsBriefs[gender]}</p>
           </div>
 
           <div className="patient-scene" aria-label="患者表示">
@@ -165,6 +179,15 @@ export function App() {
               <div className="leg right" />
             </div>
             <div className="stretcher" />
+            <div
+              className="patient-face"
+              aria-label="患者の顔色・表情"
+              style={{
+                backgroundImage: `url('${faceImageUrl}')`,
+                backgroundSize: "300% 300%",
+                backgroundPosition: `${faceCell.col * 50}% ${faceCell.row * 50}%`,
+              }}
+            />
           </div>
 
           <div className="objective-panel">
