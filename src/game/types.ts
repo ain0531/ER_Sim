@@ -114,8 +114,8 @@ export type GameCase = {
     category: string;
     difficulty: string;
     summary: string;
-    emsBrief: string;
-    initialLog: string;
+    emsBriefs: { male: string; female: string };
+    initialLogs: { male: string; female: string };
   };
   initialPatient: PatientState;
   commands: Command[];
