@@ -1,0 +1,151 @@
+import { commandCatalog, commandCategories } from "./commandCatalog";
+import { traumaShockCommandProfiles } from "./traumaShockCase";
+import type { CaseCommandProfile, Command, CommandId, GameCase, LossCondition, PatientState, ProgressionRule, WinCondition } from "./types";
+
+export { commandCategories };
+
+export const initialPatient: PatientState = {
+  elapsed: 0,
+  hr: 126,
+  bpSys: 86,
+  bpDia: 52,
+  spo2: 86,
+  temp: 36.4,
+  gcs: "E4V5M6",
+  consciousness: 82,
+  airway: 88,
+  breathing: 28,
+  circulation: 42,
+  bleeding: 8,
+  oxygenation: 30,
+  shock: 78,
+  performed: []
+};
+
+export const tensionPneumothoraxCommandProfiles: Record<CommandId, CaseCommandProfile> = {
+  ...traumaShockCommandProfiles,
+  oxygen: {
+    grade: "acceptable",
+    requiredConditions: ["低酸素", "呼吸不全"],
+    effects: ["酸素化を一時的に改善", "緊張性気胸の根本治療ではない"],
+    stateDelta: { oxygenation: 10, breathing: 4 }
+  },
+  niv: {
+    grade: "harmful",
+    requiredConditions: ["循環が安定", "気胸が否定的"],
+    effects: ["陽圧で緊張性気胸を悪化させる"],
+    stateDelta: { oxygenation: -8, breathing: -10, circulation: -12, shock: 15 }
+  },
+  ventilator: {
+    grade: "harmful",
+    requiredConditions: ["気管挿管後", "緊張性気胸の解除後"],
+    effects: ["減圧前の陽圧換気で循環を悪化させる"],
+    stateDelta: { oxygenation: -5, breathing: -8, circulation: -10, shock: 12 },
+    requiresCompleted: [{ commandIds: ["intubation"], message: "気管挿管が必要" }]
+  },
+  thoracentesis: {
+    grade: "best",
+    requiredConditions: ["緊張性気胸疑い", "呼吸循環不全"],
+    effects: ["胸腔内圧を解除", "酸素化と循環を改善"],
+    stateDelta: { oxygenation: 26, breathing: 24, circulation: 18, shock: -28 }
+  },
+  chestTube: {
+    grade: "best",
+    requiredConditions: ["気胸または緊張性気胸", "再膨張維持が必要"],
+    effects: ["脱気を維持", "再緊張化を予防"],
+    stateDelta: { oxygenation: 18, breathing: 20, circulation: 12, shock: -18 },
+    requiresCompleted: [{ commandIds: ["thoracentesis"], message: "胸腔穿刺が必要" }]
+  },
+  massiveFluid: {
+    grade: "ineffective",
+    requiredConditions: ["循環不全", "ルート確保完了"],
+    effects: ["循環改善は限定的", "根本治療を遅らせる"],
+    stateDelta: { circulation: 3, shock: 3 },
+    requiresCompleted: [{ commandIds: ["iv"], message: "ルート確保が必要" }]
+  },
+  transfusion: {
+    grade: "ineffective",
+    requiredConditions: ["大量出血が疑われる"],
+    effects: ["この症例では主病態に直結しない"],
+    stateDelta: { shock: 2 },
+    requiresCompleted: [{ commandIds: ["iv"], message: "ルート確保が必要" }]
+  },
+  fast: {
+    grade: "ineffective",
+    requiredConditions: ["腹腔内出血評価"],
+    effects: ["緊張性気胸の解除を遅らせる"],
+    stateDelta: { shock: 3 }
+  },
+  plainCt: {
+    grade: "harmful",
+    requiredConditions: ["循環・呼吸が安定", "搬送可能"],
+    effects: ["不安定患者の減圧を遅らせる"],
+    stateDelta: { oxygenation: -8, breathing: -8, circulation: -6, shock: 10 }
+  },
+  chestXray: {
+    grade: "acceptable",
+    requiredConditions: ["減圧後または比較的安定", "胸部評価"],
+    effects: ["気胸を評価", "不安定時は治療を優先"],
+    stateDelta: { shock: 1 }
+  },
+  surgeryContact: {
+    grade: "acceptable",
+    requiredConditions: ["胸腔ドレーン後も改善不良", "外傷外科対応が必要"],
+    effects: ["追加治療へ接続", "初期救命の決定打ではない"],
+    stateDelta: { shock: -2 }
+  },
+  warming: {
+    grade: "ineffective",
+    requiredConditions: ["低体温"],
+    effects: ["本症例の主病態には影響しにくい"],
+    stateDelta: { shock: 1 }
+  }
+};
+
+export const commands: Command[] = commandCatalog.map((command) => ({
+  ...command,
+  ...tensionPneumothoraxCommandProfiles[command.id]
+}));
+
+export const winCondition: WinCondition = {
+  requiredCommands: ["oxygen", "thoracentesis", "chestTube"],
+  stabilization: {
+    minBpSys: 75,
+    maxShock: 70
+  }
+};
+
+export const progression: ProgressionRule = {
+  uncontrolledDelta: {
+    oxygenation: -0.24,
+    breathing: -0.22,
+    circulation: -0.2,
+    shock: 0.28,
+    consciousness: -0.08
+  },
+  controlledMultiplier: 0.2
+};
+
+export const lossCondition: LossCondition = {
+  minBpSys: 55,
+  maxShock: 98,
+  maxElapsed: 300
+};
+
+export const tensionPneumothoraxCase: GameCase = {
+  id: "tension-pneumothorax",
+  metadata: {
+    title: "緊張性気胸",
+    locationLabel: "Trauma Bay 02",
+    category: "外傷",
+    difficulty: "標準",
+    summary: "胸部外傷後の緊張性気胸に対して、低酸素と閉塞性ショックを迅速に解除する。",
+    emsBrief: "30代男性。胸部外傷後から呼吸苦が増悪。右胸部呼吸音低下、頸静脈怒張、血圧低下あり。",
+    initialLog: "30代男性、胸部外傷。呼吸苦と低酸素が進行しています。緊張性気胸を念頭に初期対応してください。"
+  },
+  initialPatient,
+  commands,
+  winCondition,
+  progression,
+  lossCondition
+};
