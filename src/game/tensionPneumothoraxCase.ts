@@ -54,6 +54,12 @@ export const tensionPneumothoraxCommandProfiles: Record<CommandId, CaseCommandPr
     effects: ["胸部所見を確認"],
     stateDelta: { shock: -1 }
   },
+  abdominalExam: {
+    grade: "ineffective",
+    requiredConditions: ["C評価", "腹部の視診・触診"],
+    effects: ["腹部所見を確認", "本症例の主病態には直結しない"],
+    stateDelta: { shock: 0 }
+  },
   radialPulseCheck: {
     grade: "acceptable",
     requiredConditions: ["C評価", "末梢循環の確認"],
@@ -203,6 +209,7 @@ export const tensionPneumothoraxCase: GameCase = {
       subcutaneousEmphysemaCheck: "右前胸部から頸部に皮下気腫を触れる。",
       trachealDeviationCheck: "気管は左偏位している。",
       chestPalpation: "右前胸部に圧痛と握雪感を認める。",
+      abdominalExam: "腹部に明らかな膨満や圧痛はない。",
       radialPulseCheck: "橈骨動脈は微弱である。",
       consciousnessCheck: "不穏だが呼名に応答する。",
       chestXray: "右肺虚脱と縦隔偏位を認める。",

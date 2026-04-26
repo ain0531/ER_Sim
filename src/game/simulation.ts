@@ -46,7 +46,15 @@ export function isCommandComplete(commandId: CommandId, state: PatientState, com
   return state.performed.includes(commandId) && (completionTimes[commandId] ?? Number.POSITIVE_INFINITY) <= state.elapsed;
 }
 
-export function isDiagnosisMet(state: PatientState, completionTimes: CompletionTimes, winCondition: WinCondition) {
+export function isDiagnosisMet(
+  state: PatientState,
+  completionTimes: CompletionTimes,
+  winCondition: WinCondition,
+  diagnosedMassiveHemorrhage = false
+) {
+  if (diagnosedMassiveHemorrhage) {
+    return true;
+  }
   const diagnosisRule = winCondition.diagnosisRule;
   if (!diagnosisRule) {
     return false;
@@ -57,12 +65,17 @@ export function isDiagnosisMet(state: PatientState, completionTimes: CompletionT
   return hasRequiredData && hasShockVital;
 }
 
-export function getActiveRequiredCommands(state: PatientState, completionTimes: CompletionTimes, winCondition: WinCondition) {
+export function getActiveRequiredCommands(
+  state: PatientState,
+  completionTimes: CompletionTimes,
+  winCondition: WinCondition,
+  diagnosedMassiveHemorrhage = false
+) {
   if (!winCondition.diagnosisRule) {
     return winCondition.requiredCommands;
   }
 
-  const diagnosisMet = isDiagnosisMet(state, completionTimes, winCondition);
+  const diagnosisMet = isDiagnosisMet(state, completionTimes, winCondition, diagnosedMassiveHemorrhage);
   const activeCommands = diagnosisMet
     ? [...winCondition.requiredCommands, ...winCondition.diagnosisRule.additionalRequiredCommands]
     : winCondition.requiredCommands;
@@ -113,9 +126,12 @@ export function progressPatient(
   state: PatientState,
   completionTimes: CompletionTimes,
   winCondition: WinCondition,
-  progression: ProgressionRule
+  progression: ProgressionRule,
+  diagnosedMassiveHemorrhage = false
 ): PatientState {
-  const controlled = getActiveRequiredCommands(state, completionTimes, winCondition).every((id) => isCommandComplete(id, state, completionTimes));
+  const controlled = getActiveRequiredCommands(state, completionTimes, winCondition, diagnosedMassiveHemorrhage).every((id) =>
+    isCommandComplete(id, state, completionTimes)
+  );
   const multiplier = controlled ? progression.controlledMultiplier : 1;
   const next = applyProgressionDelta({ ...state, elapsed: state.elapsed + 1 }, completionTimes, progression, multiplier);
 
@@ -152,40 +168,51 @@ function applyStateDelta(state: PatientState, command: Command): PatientState {
   return applyDelta(state, command.stateDelta ?? {});
 }
 
-function isConditionalProfileActive(command: Command, state: PatientState, completionTimes: CompletionTimes): boolean {
+function isConditionalProfileActive(
+  command: Command,
+  state: PatientState,
+  completionTimes: CompletionTimes,
+  diagnosedMassiveHemorrhage = false
+): boolean {
   return (
     command.conditionalProfile !== undefined &&
     (command.conditionalProfile.requiresAnyCompleted.length === 0 ||
       command.conditionalProfile.requiresAnyCompleted.some((id) => isCommandComplete(id, state, completionTimes))) &&
     (command.conditionalProfile.requiresDiagnosisId === undefined ||
-      (command.conditionalProfile.requiresDiagnosisId === "massiveHemorrhage" && isDiagnosisMet(state, completionTimes, {
-        requiredCommands: [],
-        diagnosisRule: {
-          id: "massiveHemorrhage",
-          shockVital: { maxBpSys: 90, minHr: 120 },
-          requiresCompleted: ["fast"],
-          additionalRequiredCommands: []
-        },
-        stabilization: { minBpSys: 0, maxShock: 100 }
-      })))
+      (command.conditionalProfile.requiresDiagnosisId === "massiveHemorrhage" && diagnosedMassiveHemorrhage))
   );
 }
 
-export function getEffectiveGrade(command: Command, state: PatientState, completionTimes: CompletionTimes): CommandGrade {
-  if (isConditionalProfileActive(command, state, completionTimes)) {
+export function getEffectiveGrade(
+  command: Command,
+  state: PatientState,
+  completionTimes: CompletionTimes,
+  diagnosedMassiveHemorrhage = false
+): CommandGrade {
+  if (isConditionalProfileActive(command, state, completionTimes, diagnosedMassiveHemorrhage)) {
     return command.conditionalProfile!.grade;
   }
   return command.grade;
 }
 
-export function getEffectiveEffects(command: Command, state: PatientState, completionTimes: CompletionTimes): string[] {
-  if (isConditionalProfileActive(command, state, completionTimes)) {
+export function getEffectiveEffects(
+  command: Command,
+  state: PatientState,
+  completionTimes: CompletionTimes,
+  diagnosedMassiveHemorrhage = false
+): string[] {
+  if (isConditionalProfileActive(command, state, completionTimes, diagnosedMassiveHemorrhage)) {
     return command.conditionalProfile!.effects;
   }
   return command.effects;
 }
 
-export function applyCommand(state: PatientState, command: Command, completionTimes: CompletionTimes): PatientState {
+export function applyCommand(
+  state: PatientState,
+  command: Command,
+  completionTimes: CompletionTimes,
+  diagnosedMassiveHemorrhage = false
+): PatientState {
   const alreadyDone = state.performed.includes(command.id) && !command.repeatable;
   let next = { ...state };
 
@@ -198,7 +225,7 @@ export function applyCommand(state: PatientState, command: Command, completionTi
     next.performed = [...next.performed, command.id];
   }
 
-  const conditionalActive = isConditionalProfileActive(command, state, completionTimes);
+  const conditionalActive = isConditionalProfileActive(command, state, completionTimes, diagnosedMassiveHemorrhage);
   const activeDelta =
     conditionalActive && command.conditionalProfile!.stateDelta
       ? command.conditionalProfile!.stateDelta
@@ -221,9 +248,12 @@ export function getOutcome(
   state: PatientState,
   completionTimes: CompletionTimes,
   winCondition: WinCondition,
-  lossCondition: LossCondition
+  lossCondition: LossCondition,
+  diagnosedMassiveHemorrhage = false
 ): GameStatus {
-  if (getActiveRequiredCommands(state, completionTimes, winCondition).every((id) => isCommandComplete(id, state, completionTimes))) {
+  if (getActiveRequiredCommands(state, completionTimes, winCondition, diagnosedMassiveHemorrhage).every((id) =>
+    isCommandComplete(id, state, completionTimes)
+  )) {
     return "won";
   }
 
@@ -251,7 +281,13 @@ export function gradeLabel(grade: CommandGrade) {
   return labels[grade];
 }
 
-export function getCommandBlockReason(command: Command, state: PatientState, completionTimes: CompletionTimes, winCondition: WinCondition) {
+export function getCommandBlockReason(
+  command: Command,
+  state: PatientState,
+  completionTimes: CompletionTimes,
+  winCondition: WinCondition,
+  diagnosedMassiveHemorrhage = false
+) {
   for (const requirement of command.requiresCompleted ?? []) {
     const allCompleted = requirement.commandIds.every((id) => isCommandComplete(id, state, completionTimes));
     const anyCompleted =
@@ -265,8 +301,8 @@ export function getCommandBlockReason(command: Command, state: PatientState, com
 
   if (command.requiresWinProgress) {
     const requirementsBeforeCommand = command.requiresWinProgress.excludeSelf
-      ? getActiveRequiredCommands(state, completionTimes, winCondition).filter((id) => id !== command.id)
-      : getActiveRequiredCommands(state, completionTimes, winCondition);
+      ? getActiveRequiredCommands(state, completionTimes, winCondition, diagnosedMassiveHemorrhage).filter((id) => id !== command.id)
+      : getActiveRequiredCommands(state, completionTimes, winCondition, diagnosedMassiveHemorrhage);
     const completedBeforeCommand = requirementsBeforeCommand.filter((id) => isCommandComplete(id, state, completionTimes)).length;
     if (completedBeforeCommand / requirementsBeforeCommand.length < command.requiresWinProgress.minRatio) {
       return command.requiresWinProgress.message;

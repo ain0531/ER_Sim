@@ -24,6 +24,7 @@ export const commandCatalog: BaseCommand[] = [
   { id: "ventilator", category: "B", label: "人工呼吸器装着", duration: 25 },
   { id: "thoracentesis", category: "B", label: "胸腔穿刺", duration: 15 },
   { id: "chestTube", category: "B", label: "胸腔ドレーン留置", duration: 35 },
+  { id: "abdominalExam", category: "C", label: "腹部の視診・触診", duration: 3 },
   { id: "radialPulseCheck", category: "C", label: "橈骨動脈の触知確認", duration: 1 },
   { id: "bpCuff", category: "C", label: "血圧計を装着", duration: 5 },
   { id: "ecgMonitor", category: "C", label: "心電図を装着", duration: 5 },

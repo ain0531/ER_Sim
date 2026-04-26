@@ -29,6 +29,41 @@ button {
   padding: 14px;
 }
 
+.popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 8, 6, 0.68);
+  backdrop-filter: blur(2px);
+}
+
+.popup-card {
+  display: grid;
+  gap: 14px;
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(135deg, rgba(22, 36, 29, 0.98), rgba(10, 15, 12, 0.98));
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.34);
+}
+
+.popup-card p {
+  margin: 0;
+  color: #f4fbf6;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.popup-image {
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .case-bar {
   display: flex;
   align-items: center;
@@ -133,10 +168,10 @@ h2 {
 .patient-scene {
   position: relative;
   overflow: hidden;
-  min-height: 300px;
-  background:
-    linear-gradient(180deg, rgba(214, 229, 205, 0.08), transparent 48%),
-    linear-gradient(90deg, rgba(66, 84, 73, 0.32), rgba(20, 30, 25, 0.88));
+  height: 300px;
+  display: grid;
+  place-items: center;
+  background: rgba(11, 17, 14, 0.76);
 }
 
 .patient-face {
@@ -152,106 +187,29 @@ h2 {
   z-index: 1;
 }
 
-.light-rig {
+.patient-fast-image {
   position: absolute;
-  top: 0;
-  left: 50%;
-  width: 220px;
-  height: 220px;
-  transform: translateX(-50%);
-  background: radial-gradient(circle at top, rgba(236, 255, 213, 0.28), transparent 70%);
+  top: 50%;
+  left: 20px;
+  z-index: 1;
+  width: 120px;
+  max-width: 32%;
+  transform: translateY(-50%);
+  object-fit: contain;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(11, 17, 14, 0.92);
 }
 
-.patient-figure {
+.patient-body-image {
   position: absolute;
-  left: 50%;
-  bottom: 46px;
-  width: 172px;
-  height: 320px;
-  transform: translateX(-50%) scale(0.66);
-  transform-origin: bottom center;
-}
-
-.head,
-.torso,
-.arm,
-.leg {
-  position: absolute;
-  background: #d2b39d;
-  border: 2px solid rgba(44, 28, 24, 0.4);
-}
-
-.head {
-  top: 0;
-  left: 58px;
-  width: 56px;
-  height: 64px;
-  border-radius: 50% 50% 44% 44%;
-  background: #cba58d;
-}
-
-.torso {
-  top: 72px;
-  left: 39px;
-  width: 94px;
-  height: 128px;
-  border-radius: 10px 10px 18px 18px;
-  background: #b8c1bb;
-}
-
-.trauma-mark {
-  position: absolute;
-  right: 16px;
-  bottom: 22px;
-  width: 30px;
-  height: 38px;
-  border-radius: 50%;
-  background: rgba(121, 26, 34, 0.78);
-  box-shadow: 0 0 24px rgba(167, 39, 48, 0.65);
-}
-
-.arm {
-  top: 84px;
-  width: 34px;
-  height: 122px;
-  border-radius: 18px;
-}
-
-.arm.left {
-  left: 8px;
-  transform: rotate(10deg);
-}
-
-.arm.right {
-  right: 8px;
-  transform: rotate(-8deg);
-}
-
-.leg {
-  top: 196px;
-  width: 38px;
-  height: 124px;
-  border-radius: 18px;
-  background: #5d6964;
-}
-
-.leg.left {
-  left: 45px;
-}
-
-.leg.right {
-  right: 45px;
-}
-
-.stretcher {
-  position: absolute;
-  left: 50%;
-  bottom: 34px;
-  width: min(86%, 340px);
-  height: 46px;
-  transform: translateX(-50%);
-  background: linear-gradient(90deg, #707a72, #aab0a4, #707a72);
-  border: 2px solid rgba(255, 255, 255, 0.14);
+  inset: 12px;
+  z-index: 1;
+  width: auto;
+  height: auto;
+  max-width: calc(100% - 24px);
+  max-height: calc(100% - 24px);
+  margin: auto;
+  object-fit: contain;
 }
 
 .ems-brief {
@@ -855,13 +813,13 @@ button:disabled {
   }
 
   .patient-scene {
-    min-height: 380px;
+    height: 380px;
   }
 
-  .patient-figure {
-    bottom: 74px;
-    transform: translateX(-50%) scale(0.82);
-    transform-origin: bottom center;
+  .patient-body-image {
+    inset: 10px;
+    max-width: calc(100% - 20px);
+    max-height: calc(100% - 20px);
   }
 
   .monitor-header {

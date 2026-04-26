@@ -43,6 +43,12 @@ function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+type PopupState = {
+  message: string;
+  imageSrc?: string;
+  imageAlt?: string;
+};
+
 export function App() {
   const [activeCase, setActiveCase] = useState<GameCase>(gameCases[0]);
   const { commands, initialPatient, lossCondition, progression, winCondition } = activeCase;
@@ -57,17 +63,25 @@ export function App() {
   const [log, setLog] = useState<LogEntry[]>(() => [
     { time: 0, message: activeCase.metadata.initialLogs[gender], tone: "neutral", kind: "system" }
   ]);
+  const [popupState, setPopupState] = useState<PopupState | null>(null);
+  const [seenAlerts, setSeenAlerts] = useState<Record<string, boolean>>({});
+  const [seenEndPopup, setSeenEndPopup] = useState(false);
+  const [diagnosedMassiveHemorrhage, setDiagnosedMassiveHemorrhage] = useState(false);
   const logListRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (status !== "running") {
+    if (status !== "running" || popupState) {
       return;
     }
 
     const timer = window.setInterval(() => {
       setPatient((current) => {
-        const next = progressPatient(current, completionTimes, winCondition, progression);
-        const outcome = getOutcome(next, completionTimes, winCondition, lossCondition);
+        const next = progressPatient(current, completionTimes, winCondition, progression, diagnosedMassiveHemorrhage);
+        const nextDiagnosisMet = diagnosedMassiveHemorrhage || isDiagnosisMet(next, completionTimes, winCondition);
+        if (nextDiagnosisMet && !diagnosedMassiveHemorrhage) {
+          setDiagnosedMassiveHemorrhage(true);
+        }
+        const outcome = getOutcome(next, completionTimes, winCondition, lossCondition, nextDiagnosisMet);
         if (outcome !== "running") {
           setStatus(outcome);
         }
@@ -76,7 +90,7 @@ export function App() {
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [completionTimes, status]);
+  }, [completionTimes, diagnosedMassiveHemorrhage, popupState, status]);
 
   useEffect(() => {
     if (!logListRef.current) {
@@ -85,12 +99,16 @@ export function App() {
     logListRef.current.scrollTop = logListRef.current.scrollHeight;
   }, [log]);
 
-  const outcome = useMemo(() => getOutcome(patient, completionTimes, winCondition, lossCondition), [completionTimes, lossCondition, patient, winCondition]);
+  const outcome = useMemo(
+    () => getOutcome(patient, completionTimes, winCondition, lossCondition, diagnosedMassiveHemorrhage),
+    [completionTimes, diagnosedMassiveHemorrhage, lossCondition, patient, winCondition]
+  );
   const remaining = Math.max(0, lossCondition.maxElapsed - patient.elapsed);
   const initialRequiredCommands = winCondition.requiredCommands;
   const postDiagnosisRequiredCommands = winCondition.diagnosisRule?.additionalRequiredCommands ?? [];
-  const requiredCommands = getActiveRequiredCommands(patient, completionTimes, winCondition);
-  const diagnosisMet = isDiagnosisMet(patient, completionTimes, winCondition);
+  const computedDiagnosisMet = isDiagnosisMet(patient, completionTimes, winCondition);
+  const diagnosisMet = diagnosedMassiveHemorrhage || computedDiagnosisMet;
+  const requiredCommands = getActiveRequiredCommands(patient, completionTimes, winCondition, diagnosisMet);
   const completedRequirements = requiredCommands.filter((id) => isCommandComplete(id, patient, completionTimes)).length;
   const bpStable = patient.bpSys >= winCondition.stabilization.minBpSys;
   const shockStable = patient.shock < winCondition.stabilization.maxShock;
@@ -101,12 +119,15 @@ export function App() {
   const hasBpCuff = isCommandComplete("bpCuff", patient, completionTimes);
   const hasEcgMonitor = isCommandComplete("ecgMonitor", patient, completionTimes);
   const hasTemperatureMeasurement = isCommandComplete("temperatureMeasurement", patient, completionTimes);
+  const hasConsciousnessCheck = isCommandComplete("consciousnessCheck", patient, completionTimes);
+  const hasCirculationAssessment = hasBpCuff && hasEcgMonitor;
+  const inspectionFindings = activeCase.metadata.inspectionFindings ?? {};
+  const hasFastPositiveFinding = isCommandComplete("fast", patient, completionTimes) && Boolean(inspectionFindings.fast);
   const diagnosisCandidateVisible =
     winCondition.diagnosisRule !== undefined &&
     isCommandComplete("fast", patient, completionTimes) &&
     hasBpCuff &&
     hasEcgMonitor;
-  const inspectionFindings = activeCase.metadata.inspectionFindings ?? {};
   const visibleInspectionFindings = Object.entries(inspectionFindings).filter(([id]) =>
     isCommandComplete(id as Command["id"], patient, completionTimes)
   );
@@ -126,6 +147,61 @@ export function App() {
   const commandScore = Math.max(0, Math.min(30, commandQualityRaw));
   const totalScore = clampScore(timeScore + stabilizationScore + commandScore);
 
+  useEffect(() => {
+    if (computedDiagnosisMet && !diagnosedMassiveHemorrhage) {
+      setDiagnosedMassiveHemorrhage(true);
+    }
+  }, [computedDiagnosisMet, diagnosedMassiveHemorrhage]);
+
+  useEffect(() => {
+    if (popupState || status !== "running") {
+      return;
+    }
+
+    const hasShockVitals = hasCirculationAssessment && patient.hr >= 120 && patient.bpSys <= 90;
+    const hasFastPositive = isCommandComplete("fast", patient, completionTimes);
+    const alerts = [
+      { id: "shockVitals", active: hasShockVitals, popup: { message: "ショック状態です！" } },
+      {
+        id: "fastPositive",
+        active: hasFastPositive,
+        popup: {
+          message: "腹腔内に体液貯留があります！",
+          imageSrc: "/images/FAST_abdominal1.jpg",
+          imageAlt: "FAST腹部所見"
+        }
+      },
+      {
+        id: "hemorrhagicShock",
+        active: hasShockVitals && hasFastPositive,
+        popup: { message: "腹腔内出血によるショックが疑われます！" }
+      }
+    ];
+
+    const nextAlert = alerts.find((alert) => alert.active && !seenAlerts[alert.id]);
+    if (nextAlert) {
+      setPopupState(nextAlert.popup);
+      setSeenAlerts((current) => ({ ...current, [nextAlert.id]: true }));
+    }
+  }, [completionTimes, hasCirculationAssessment, patient.bpSys, patient.hr, popupState, seenAlerts, status]);
+
+  useEffect(() => {
+    if (popupState || seenEndPopup) {
+      return;
+    }
+
+    if (status === "won") {
+      setPopupState({ message: "救命に成功しました。" });
+      setSeenEndPopup(true);
+      return;
+    }
+
+    if (status === "lost") {
+      setPopupState({ message: "救命に失敗しました。" });
+      setSeenEndPopup(true);
+    }
+  }, [popupState, seenEndPopup, status]);
+
   function start() {
     setStatus("running");
     setLog((current) => [...current, { time: 0, message: "シミュレーション開始。出血性ショックとして初期対応を進めます。", tone: "neutral", kind: "system" }]);
@@ -143,6 +219,10 @@ export function App() {
     setShuffledCommands(shuffleCommands(nextCase.commands));
     setCategoryLocks({});
     setCompletionTimes({});
+    setSeenAlerts({});
+    setSeenEndPopup(false);
+    setDiagnosedMassiveHemorrhage(false);
+    setPopupState(null);
     setLog([{ time: 0, message: nextCase.metadata.initialLogs[nextGender], tone: "neutral", kind: "system" }]);
   }
 
@@ -157,27 +237,31 @@ export function App() {
   }
 
   function execute(command: Command) {
-    if (status !== "running") {
+    if (status !== "running" || popupState) {
       return;
     }
 
     const lockedUntil = categoryLocks[command.category] ?? 0;
-    const blockReason = getCommandBlockReason(command, patient, completionTimes, winCondition);
+    const blockReason = getCommandBlockReason(command, patient, completionTimes, winCondition, diagnosisMet);
     if ((command.blocksCategory !== false && lockedUntil > patient.elapsed) || blockReason) {
       return;
     }
 
     setPatient((current) => {
       const nextCompletionTimes = { ...completionTimes, [command.id]: current.elapsed + command.duration };
-      const next = applyCommand(current, command, completionTimes);
-      const nextOutcome = getOutcome(next, nextCompletionTimes, winCondition, lossCondition);
+      const next = applyCommand(current, command, completionTimes, diagnosisMet);
+      const nextDiagnosisMet = diagnosisMet || isDiagnosisMet(next, nextCompletionTimes, winCondition);
+      if (nextDiagnosisMet && !diagnosisMet) {
+        setDiagnosedMassiveHemorrhage(true);
+      }
+      const nextOutcome = getOutcome(next, nextCompletionTimes, winCondition, lossCondition, nextDiagnosisMet);
       setStatus(nextOutcome);
       if (command.blocksCategory !== false) {
         setCategoryLocks((currentLocks) => ({ ...currentLocks, [command.category]: current.elapsed + command.duration }));
       }
       setCompletionTimes(nextCompletionTimes);
-      const effectiveGrade = getEffectiveGrade(command, current, completionTimes);
-      const effectiveEffects = dedupeMessages(getEffectiveEffects(command, current, completionTimes));
+      const effectiveGrade = getEffectiveGrade(command, current, completionTimes, diagnosisMet);
+      const effectiveEffects = dedupeMessages(getEffectiveEffects(command, current, completionTimes, diagnosisMet));
       setLog((entries) => [
         ...entries.filter((entry) => !(entry.time === next.elapsed && entry.message === getLogSummary(command, effectiveEffects))),
         {
@@ -193,6 +277,17 @@ export function App() {
 
   return (
     <main className="sim-shell">
+      {popupState ? (
+        <div className="popup-backdrop" role="dialog" aria-modal="true" aria-label="所見ポップアップ">
+          <div className="popup-card">
+            {popupState.imageSrc ? <img className="popup-image" src={popupState.imageSrc} alt={popupState.imageAlt ?? ""} /> : null}
+            <p>{popupState.message}</p>
+            <button className="primary-action" onClick={() => setPopupState(null)}>
+              OK
+            </button>
+          </div>
+        </div>
+      ) : null}
       <section className="case-bar">
         <div>
           <p className="eyebrow">{activeCase.metadata.locationLabel}</p>
@@ -224,19 +319,9 @@ export function App() {
           </div>
 
           <div className="patient-scene" aria-label="患者表示">
-            <div className="light-rig" />
-            <div className="patient-figure">
-              <div className="head" />
-              <div className="torso">
-                <div className="trauma-mark" />
-              </div>
-              <div className="arm left" />
-              <div className="arm right" />
-              <div className="leg left" />
-              <div className="leg right" />
-            </div>
-            <div className="stretcher" />
-          <div
+            <img className="patient-body-image" src="/images/wholeBody.png" alt="患者全身像" />
+            {hasFastPositiveFinding ? <img className="patient-fast-image" src="/images/FAST_abdominal1.jpg" alt="FAST腹部所見" /> : null}
+            <div
               className="patient-face"
               aria-label="患者の顔色・表情"
               style={{
@@ -280,7 +365,6 @@ export function App() {
               </div>
             </div>
             <div className="objective-group-title">必須処置</div>
-            <div className="objective-group-title">大量出血診断前</div>
             {initialRequiredCommands.map((id) => {
               const command = commands.find((item) => item.id === id)!;
               const done = isCommandComplete(id, patient, completionTimes);
@@ -371,15 +455,15 @@ export function App() {
           </div>
 
           <div className="assessment-grid">
-            <Meter label="循環" value={patient.circulation} dangerLow />
-            <Meter label="出血量" value={patient.bleeding} dangerHigh />
-            <Meter label="酸素化" value={patient.oxygenation} dangerLow />
-            <Meter label="ショック" value={patient.shock} dangerHigh />
+            <Meter label="循環" value={hasCirculationAssessment ? patient.circulation : null} dangerLow />
+            <Meter label="出血量" value={diagnosisMet ? patient.bleeding : null} dangerHigh />
+            <Meter label="酸素化" value={hasSpo2Monitor ? patient.oxygenation : null} dangerLow />
+            <Meter label="ショック" value={hasCirculationAssessment ? patient.shock : null} dangerHigh />
           </div>
 
           <div className="gcs-row">
             <span>GCS</span>
-            <strong>{patient.gcs}</strong>
+            <strong>{hasConsciousnessCheck ? patient.gcs : "--"}</strong>
             <span>経過 {formatTime(patient.elapsed)}</span>
           </div>
 
@@ -458,9 +542,9 @@ export function App() {
                         const done = patient.performed.includes(command.id) && !command.repeatable;
                         const lockedUntil = categoryLocks[command.category] ?? 0;
                         const categoryLocked = command.blocksCategory !== false && lockedUntil > patient.elapsed;
-                        const blockReason = getCommandBlockReason(command, patient, completionTimes, winCondition);
-                        const effectiveGrade = getEffectiveGrade(command, patient, completionTimes);
-                        const effectiveEffects = dedupeMessages(getEffectiveEffects(command, patient, completionTimes));
+                        const blockReason = getCommandBlockReason(command, patient, completionTimes, winCondition, diagnosisMet);
+                        const effectiveGrade = getEffectiveGrade(command, patient, completionTimes, diagnosisMet);
+                        const effectiveEffects = dedupeMessages(getEffectiveEffects(command, patient, completionTimes, diagnosisMet));
                         return (
                           <button
                             className={`command command-${effectiveGrade}`}
@@ -551,7 +635,21 @@ function DebugItem({ label, value }: { label: string; value: string | number }) 
   );
 }
 
-function Meter({ label, value, dangerHigh, dangerLow }: { label: string; value: number; dangerHigh?: boolean; dangerLow?: boolean }) {
+function Meter({ label, value, dangerHigh, dangerLow }: { label: string; value: number | null; dangerHigh?: boolean; dangerLow?: boolean }) {
+  if (value === null) {
+    return (
+      <div className="meter">
+        <div>
+          <span>{label}</span>
+          <strong>--</strong>
+        </div>
+        <i>
+          <b style={{ width: "0%" }} />
+        </i>
+      </div>
+    );
+  }
+
   const dangerous = dangerHigh ? value >= 75 : dangerLow ? value <= 35 : false;
 
   return (

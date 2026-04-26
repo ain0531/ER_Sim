@@ -4,6 +4,7 @@ export type CommandId =
   | "subcutaneousEmphysemaCheck"
   | "trachealDeviationCheck"
   | "chestPalpation"
+  | "abdominalExam"
   | "radialPulseCheck"
   | "consciousnessCheck"
   | "nasalAirway"

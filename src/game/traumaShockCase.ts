@@ -115,6 +115,12 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
     effects: ["外傷所見を確認", "Primary Surveyを構成する"],
     stateDelta: { bleeding: -2, shock: -2 }
   },
+  abdominalExam: {
+    grade: "best",
+    requiredConditions: ["C評価", "腹部の視診・触診"],
+    effects: ["腹部膨満や圧痛を確認", "Primary Surveyを構成する"],
+    stateDelta: { bleeding: -2, shock: -2 }
+  },
   bpCuff: {
     grade: "acceptable",
     requiredConditions: ["循環評価が必要"],
@@ -170,12 +176,12 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
     grade: "best",
     requiredConditions: ["ルート確保完了", "バイタル確認済み", "循環不全"],
     effects: ["循環を一時的に改善", "出血を軽度抑制", "シース確保後は止血効果1.5倍", "希釈性凝固障害のリスク"],
-    stateDelta: { bpSys: 9, circulation: 9, shock: -5, bleeding: -4 },
+    stateDelta: { bpSys: 13.5, circulation: 13.5, shock: -7.5, bleeding: -6 },
     requiresCompleted: [
       vascularAccessRequirement,
       { commandIds: ["ecgMonitor", "bpCuff"], message: "心電図・血圧計の装着が必要" }
     ],
-    bonusDelta: { requiresCompleted: ["sheath"], delta: { bpSys: 4.5, bleeding: -2 } }
+    bonusDelta: { requiresCompleted: ["sheath"], delta: { bpSys: 6.75, bleeding: -3 } }
   },
   vasopressor: {
     grade: "harmful",
@@ -194,13 +200,13 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
     grade: "best",
     requiredConditions: ["ルート確保完了", "バイタル確認済み", "FASTで出血確認済み"],
     effects: ["循環を改善", "ショックを改善", "出血を中等度抑制", "シース確保後は止血効果1.5倍"],
-    stateDelta: { bpSys: 18, circulation: 18, shock: -14, bleeding: -8 },
+    stateDelta: { bpSys: 27, circulation: 27, shock: -21, bleeding: -12 },
     requiresCompleted: [
       vascularAccessRequirement,
       { commandIds: ["ecgMonitor", "bpCuff"], message: "心電図・血圧計の装着が必要" },
       { commandIds: ["fast"], message: "FASTで出血確認が必要" }
     ],
-    bonusDelta: { requiresCompleted: ["sheath"], delta: { bpSys: 9, bleeding: -4 } }
+    bonusDelta: { requiresCompleted: ["sheath"], delta: { bpSys: 13.5, bleeding: -6 } }
   },
   ivr: {
     grade: "harmful",
@@ -321,6 +327,7 @@ export const winCondition: WinCondition = {
       "subcutaneousEmphysemaCheck",
       "trachealDeviationCheck",
       "chestPalpation",
+      "abdominalExam",
       "radialPulseCheck",
       "consciousnessCheck",
       "fast",
@@ -371,6 +378,7 @@ export const traumaShockCase: GameCase = {
       subcutaneousEmphysemaCheck: "皮下気腫は触れない。",
       trachealDeviationCheck: "気管偏位は認めない。",
       chestPalpation: "前胸部に明らかな不安定性はない。",
+      abdominalExam: "腹部は膨満し、圧痛を認める。",
       radialPulseCheck: "橈骨動脈は微弱に触知する。",
       consciousnessCheck: "呼びかけで開眼し、受け答えはやや緩慢。",
       fast: "FASTで腹腔内液体貯留を認める。",
