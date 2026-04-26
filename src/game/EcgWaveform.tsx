@@ -79,6 +79,7 @@ export function EcgWaveform({ hr, shock, status, rhythmHint }: Props) {
   const hrRef = useRef(hr);
   const shockRef = useRef(shock);
   const statusRef = useRef(status);
+  const rhythmHintRef = useRef(rhythmHint);
 
   useEffect(() => {
     hrRef.current = hr;
@@ -87,6 +88,10 @@ export function EcgWaveform({ hr, shock, status, rhythmHint }: Props) {
   useEffect(() => {
     shockRef.current = shock;
   }, [shock]);
+
+  useEffect(() => {
+    rhythmHintRef.current = rhythmHint;
+  }, [rhythmHint]);
 
   useEffect(() => {
     if (status === "lost" && statusRef.current !== "lost") {
@@ -137,7 +142,7 @@ export function EcgWaveform({ hr, shock, status, rhythmHint }: Props) {
       }
 
       const lostSec = lostAtRef.current !== null ? (now - lostAtRef.current) / 1000 : 0;
-      const rhythm = getRhythm(shockRef.current, statusRef.current, lostSec, rhythmHint);
+      const rhythm = getRhythm(shockRef.current, statusRef.current, lostSec, rhythmHintRef.current);
       const rr = getRr(hrRef.current, rhythm);
       const renderNow = frozenAtRef.current ?? now;
       const currentT = (renderNow - startRef.current) / 1000;

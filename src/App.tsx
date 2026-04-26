@@ -6,6 +6,7 @@ import { commandCategories } from "./game/traumaShockCase";
 import {
   applyCommand,
   commandTone,
+  deriveVitals,
   formatTime,
   getActiveRequiredCommands,
   getCommandBlockReason,
@@ -40,6 +41,34 @@ function getLogSummary(command: Command, effects: string[]) {
 
 function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function getDisplayedGrade(
+  command: Command,
+  patient: PatientState,
+  completionTimes: CompletionTimes,
+  diagnosisMet: boolean,
+  hasRosc: boolean,
+  isCardiacArrestCase: boolean
+) {
+  if (hasRosc && isCardiacArrestCase && command.id === "adrenalineIvBolus") {
+    return "harmful" as const;
+  }
+  return getEffectiveGrade(command, patient, completionTimes, diagnosisMet);
+}
+
+function getDisplayedEffects(
+  command: Command,
+  patient: PatientState,
+  completionTimes: CompletionTimes,
+  diagnosisMet: boolean,
+  hasRosc: boolean,
+  isCardiacArrestCase: boolean
+) {
+  if (hasRosc && isCardiacArrestCase && command.id === "adrenalineIvBolus") {
+    return ["自己心拍再開後のアドレナリン投与で循環を不安定化させる", "悪手として扱う"];
+  }
+  return getEffectiveEffects(command, patient, completionTimes, diagnosisMet);
 }
 
 const commandDisplayOrder = {
@@ -115,6 +144,8 @@ function playToggleBeep(context: AudioContext) {
 export function App() {
   const [activeCase, setActiveCase] = useState<GameCase>(gameCases[0]);
   const { commands, initialPatient, lossCondition, progression, winCondition } = activeCase;
+  const initialMonitorRhythm =
+    activeCase.metadata.monitorRhythms?.[Math.floor(Math.random() * activeCase.metadata.monitorRhythms.length)] ?? activeCase.metadata.monitorRhythm;
   const [patient, setPatient] = useState(activeCase.initialPatient);
   const [status, setStatus] = useState<GameStatus>("ready");
   const [openCategories, setOpenCategories] = useState<CommandCategoryId[]>([]);
@@ -130,9 +161,11 @@ export function App() {
   const [seenEndPopup, setSeenEndPopup] = useState(false);
   const [diagnosedMassiveHemorrhage, setDiagnosedMassiveHemorrhage] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [selectedMonitorRhythm, setSelectedMonitorRhythm] = useState<GameCase["metadata"]["monitorRhythm"] | "bradycardia">(
-    () => activeCase.metadata.monitorRhythms?.[Math.floor(Math.random() * activeCase.metadata.monitorRhythms.length)] ?? activeCase.metadata.monitorRhythm
-  );
+  const [hasRosc, setHasRosc] = useState(false);
+  const [selectedMonitorRhythm, setSelectedMonitorRhythm] = useState<GameCase["metadata"]["monitorRhythm"] | "bradycardia">(initialMonitorRhythm);
+  const [hasDetectableBloodPressure, setHasDetectableBloodPressure] = useState(!activeCase.id.startsWith("cardiac-arrest-"));
+  const [rhythmRecoveryTarget, setRhythmRecoveryTarget] = useState(() => Math.floor(Math.random() * 5) + 1);
+  const [rhythmRecoveryAttempts, setRhythmRecoveryAttempts] = useState(0);
   const logListRef = useRef<HTMLDivElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const beatTimerRef = useRef<number | null>(null);
@@ -141,6 +174,7 @@ export function App() {
   const spo2Ref = useRef(patient.spo2);
   const hasEcgMonitorRef = useRef(false);
   const hasSpo2MonitorRef = useRef(false);
+  const hasDetectableBloodPressureRef = useRef(false);
 
   async function ensureAudioContext() {
     if (typeof window === "undefined") {
@@ -204,17 +238,22 @@ export function App() {
   }, [log]);
 
   const outcome = useMemo(
-    () => getOutcome(patient, completionTimes, winCondition, lossCondition, diagnosedMassiveHemorrhage),
-    [completionTimes, diagnosedMassiveHemorrhage, lossCondition, patient, winCondition]
+    () => (hasRosc ? "won" : getOutcome(patient, completionTimes, winCondition, lossCondition, diagnosedMassiveHemorrhage)),
+    [completionTimes, diagnosedMassiveHemorrhage, hasRosc, lossCondition, patient, winCondition]
   );
   const remaining = Math.max(0, lossCondition.maxElapsed - patient.elapsed);
+  const isCardiacArrestCase = activeCase.id.startsWith("cardiac-arrest-");
   const initialRequiredCommands = winCondition.requiredCommands;
   const postDiagnosisRequiredCommands = winCondition.diagnosisRule?.additionalRequiredCommands ?? [];
   const computedDiagnosisMet = isDiagnosisMet(patient, completionTimes, winCondition);
   const diagnosisMet = diagnosedMassiveHemorrhage || computedDiagnosisMet;
-  const requiredCommands = getActiveRequiredCommands(patient, completionTimes, winCondition, diagnosisMet);
+  const baseRequiredCommands = getActiveRequiredCommands(patient, completionTimes, winCondition, diagnosisMet);
+  const requiredCommands =
+    hasRosc && isCardiacArrestCase && !isCommandComplete("adrenalineIvBolus", patient, completionTimes)
+      ? baseRequiredCommands.filter((id) => id !== "adrenalineIvBolus")
+      : baseRequiredCommands;
   const completedRequirements = requiredCommands.filter((id) => isCommandComplete(id, patient, completionTimes)).length;
-  const bpStable = patient.bpSys >= winCondition.stabilization.minBpSys;
+  const bpStable = hasDetectableBloodPressure && patient.bpSys >= winCondition.stabilization.minBpSys;
   const shockStable = patient.shock < winCondition.stabilization.maxShock;
   const requiresPrimarySurvey = activeCase.metadata.tags?.includes("外傷") ?? false;
   const primarySurveyCommands = winCondition.stabilization.primarySurveyCommands ?? [];
@@ -228,12 +267,9 @@ export function App() {
   const hasRadialPulseCheck = isCommandComplete("radialPulseCheck", patient, completionTimes);
   const hasCirculationAssessment = hasBpCuff && hasEcgMonitor;
   const inspectionFindings = activeCase.metadata.inspectionFindings ?? {};
-  const isCardiacArrestCase = activeCase.id.startsWith("cardiac-arrest-");
-  const radialPulseAbsent =
-    isCardiacArrestCase ||
-    (hasRadialPulseCheck && Boolean(inspectionFindings.radialPulseCheck?.includes("触知しない")));
-  const bpDisplay = hasBpCuff ? (radialPulseAbsent ? "測定不能" : `${patient.bpSys}/${patient.bpDia}`) : "--/--";
-  const spo2Display = hasSpo2Monitor ? (radialPulseAbsent ? "測定不能" : `${patient.spo2}%`) : "--%";
+  const radialPulseAbsent = !hasDetectableBloodPressure;
+  const bpDisplay = hasBpCuff ? (hasDetectableBloodPressure ? `${patient.bpSys}/${patient.bpDia}` : "測定不能") : "--/--";
+  const spo2Display = hasSpo2Monitor ? (hasDetectableBloodPressure ? `${patient.spo2}%` : "測定不能") : "--%";
   const monitorRhythmHint = selectedMonitorRhythm;
   const hasFastPositiveFinding = isCommandComplete("fast", patient, completionTimes) && Boolean(inspectionFindings.fast);
   const diagnosisCandidateVisible =
@@ -241,9 +277,20 @@ export function App() {
     isCommandComplete("fast", patient, completionTimes) &&
     hasBpCuff &&
     hasEcgMonitor;
-  const visibleInspectionFindings = Object.entries(inspectionFindings).filter(([id]) =>
-    isCommandComplete(id as Command["id"], patient, completionTimes)
-  );
+  const visibleInspectionFindings = Object.entries(inspectionFindings)
+    .filter(([id]) => isCommandComplete(id as Command["id"], patient, completionTimes))
+    .map(([id, finding]) => {
+      if (id === "radialPulseCheck") {
+        return [id, hasDetectableBloodPressure ? "橈骨動脈を触知する。" : "橈骨動脈は触知しない。"] as const;
+      }
+      if (id === "bpCuff") {
+        return [id, hasDetectableBloodPressure ? `血圧は ${patient.bpSys}/${patient.bpDia} mmHg。` : "血圧は測定不能である。"] as const;
+      }
+      if (id === "spo2Monitor") {
+        return [id, hasDetectableBloodPressure ? `SpO2 は ${patient.spo2}%。` : "SpO2 は測定不能である。"] as const;
+      }
+      return [id, finding] as const;
+    });
   const faceCell = status === "won" && bpStable && shockStable && primarySurveyDone ? getFaceCell(initialPatient, "ready") : getFaceCell(patient, status);
   const faceImageUrl = getAssetUrl(`images/${gender === "female" ? "patient_woman_face" : "patient_man_face"}.png`);
   const stabilizationChecks = [bpStable, shockStable, ...(requiresPrimarySurvey && primarySurveyCommands.length > 0 ? [primarySurveyDone] : [])];
@@ -273,7 +320,7 @@ export function App() {
   const hasAbnormalVitals =
     (hasBpCuff && patient.bpSys <= 90) ||
     (hasEcgMonitor && (patient.hr >= 130 || patient.hr <= 45)) ||
-    (hasSpo2Monitor && patient.spo2 <= 92);
+    (hasSpo2Monitor && hasDetectableBloodPressure && patient.spo2 <= 92);
 
   useEffect(() => {
     hrRef.current = patient.hr;
@@ -283,7 +330,8 @@ export function App() {
   useEffect(() => {
     hasEcgMonitorRef.current = hasEcgMonitor;
     hasSpo2MonitorRef.current = hasSpo2Monitor;
-  }, [hasEcgMonitor, hasSpo2Monitor]);
+    hasDetectableBloodPressureRef.current = hasDetectableBloodPressure;
+  }, [hasDetectableBloodPressure, hasEcgMonitor, hasSpo2Monitor]);
 
   useEffect(() => {
     if (computedDiagnosisMet && !diagnosedMassiveHemorrhage) {
@@ -324,6 +372,15 @@ export function App() {
   }, [completionTimes, hasCirculationAssessment, patient.bpSys, patient.hr, popupState, seenAlerts, status]);
 
   useEffect(() => {
+    if (popupState || !hasRosc || seenAlerts.rosc) {
+      return;
+    }
+
+    setPopupState({ message: "自己心拍が再開しました！" });
+    setSeenAlerts((current) => ({ ...current, rosc: true }));
+  }, [hasRosc, popupState, seenAlerts]);
+
+  useEffect(() => {
     if (popupState || seenEndPopup) {
       return;
     }
@@ -359,7 +416,7 @@ export function App() {
         return;
       }
 
-      playMonitorBeat(context, hasSpo2MonitorRef.current ? spo2Ref.current : 60);
+      playMonitorBeat(context, hasSpo2MonitorRef.current && hasDetectableBloodPressureRef.current ? spo2Ref.current : 60);
       beatTimerRef.current = window.setTimeout(scheduleBeat, 60000 / Math.max(20, hrRef.current));
     };
 
@@ -419,6 +476,8 @@ export function App() {
   }
 
   function resetCase(nextCase: GameCase, nextGender: "male" | "female") {
+    const nextMonitorRhythm =
+      nextCase.metadata.monitorRhythms?.[Math.floor(Math.random() * nextCase.metadata.monitorRhythms.length)] ?? nextCase.metadata.monitorRhythm;
     setGender(nextGender);
     setPatient(nextCase.initialPatient);
     setStatus("ready");
@@ -428,10 +487,12 @@ export function App() {
     setSeenAlerts({});
     setSeenEndPopup(false);
     setDiagnosedMassiveHemorrhage(false);
+    setHasRosc(false);
     setPopupState(null);
-    setSelectedMonitorRhythm(
-      nextCase.metadata.monitorRhythms?.[Math.floor(Math.random() * nextCase.metadata.monitorRhythms.length)] ?? nextCase.metadata.monitorRhythm
-    );
+    setSelectedMonitorRhythm(nextMonitorRhythm);
+    setHasDetectableBloodPressure(!nextCase.id.startsWith("cardiac-arrest-"));
+    setRhythmRecoveryTarget(Math.floor(Math.random() * 5) + 1);
+    setRhythmRecoveryAttempts(0);
     setLog([{ time: 0, message: nextCase.metadata.initialLogs[nextGender], tone: "neutral", kind: "system" }]);
     stopSoundTimers();
   }
@@ -459,19 +520,57 @@ export function App() {
 
     setPatient((current) => {
       const nextCompletionTimes = { ...completionTimes, [command.id]: current.elapsed + command.duration };
-      const next = applyCommand(current, command, completionTimes, diagnosisMet);
+      let next = applyCommand(current, command, completionTimes, diagnosisMet);
       const nextDiagnosisMet = diagnosisMet || isDiagnosisMet(next, nextCompletionTimes, winCondition);
       if (nextDiagnosisMet && !diagnosisMet) {
         setDiagnosedMassiveHemorrhage(true);
       }
-      const nextOutcome = getOutcome(next, nextCompletionTimes, winCondition, lossCondition, nextDiagnosisMet);
+      const effectiveGrade = getDisplayedGrade(command, current, completionTimes, diagnosisMet, hasRosc, isCardiacArrestCase);
+      if (
+        isCardiacArrestCase &&
+        (command.id === "defibrillation" || command.id === "cardioversion") &&
+        (selectedMonitorRhythm === "vf" || selectedMonitorRhythm === "vt")
+      ) {
+        const nextAttempts = rhythmRecoveryAttempts + 1;
+        setRhythmRecoveryAttempts(nextAttempts);
+        if (nextAttempts >= rhythmRecoveryTarget && effectiveGrade !== "worst") {
+          setSelectedMonitorRhythm("sinus");
+          setHasDetectableBloodPressure(true);
+          setHasRosc(true);
+          next = deriveVitals({
+            ...next,
+            circulation: Math.max(next.circulation, 68),
+            oxygenation: Math.max(next.oxygenation, 56),
+            breathing: Math.max(next.breathing, 52),
+            shock: Math.min(next.shock, 42),
+            consciousness: Math.max(next.consciousness, 48)
+          });
+          setLog((entries) => [
+            ...entries,
+            {
+              time: next.elapsed,
+              message: "自己心拍が再開し、正常洞調律へ復帰した。",
+              tone: "good",
+              kind: "system"
+            }
+          ]);
+        }
+      }
+      const achievedRosc =
+        isCardiacArrestCase &&
+        (command.id === "defibrillation" || command.id === "cardioversion") &&
+        selectedMonitorRhythm !== "sinus" &&
+        rhythmRecoveryAttempts + 1 >= rhythmRecoveryTarget &&
+        effectiveGrade !== "worst";
+      const nextOutcome = achievedRosc ? "won" : getOutcome(next, nextCompletionTimes, winCondition, lossCondition, nextDiagnosisMet);
       setStatus(nextOutcome);
       if (command.blocksCategory !== false) {
         setCategoryLocks((currentLocks) => ({ ...currentLocks, [command.category]: current.elapsed + command.duration }));
       }
       setCompletionTimes(nextCompletionTimes);
-      const effectiveGrade = getEffectiveGrade(command, current, completionTimes, diagnosisMet);
-      const effectiveEffects = dedupeMessages(getEffectiveEffects(command, current, completionTimes, diagnosisMet));
+      const effectiveEffects = dedupeMessages(
+        getDisplayedEffects(command, current, completionTimes, diagnosisMet, hasRosc, isCardiacArrestCase)
+      );
       setLog((entries) => [
         ...entries.filter((entry) => !(entry.time === next.elapsed && entry.message === getLogSummary(command, effectiveEffects))),
         {
@@ -769,8 +868,10 @@ export function App() {
                         const lockedUntil = categoryLocks[command.category] ?? 0;
                         const categoryLocked = command.blocksCategory !== false && lockedUntil > patient.elapsed;
                         const blockReason = getCommandBlockReason(command, patient, completionTimes, winCondition, diagnosisMet);
-                        const effectiveGrade = getEffectiveGrade(command, patient, completionTimes, diagnosisMet);
-                        const effectiveEffects = dedupeMessages(getEffectiveEffects(command, patient, completionTimes, diagnosisMet));
+                        const effectiveGrade = getDisplayedGrade(command, patient, completionTimes, diagnosisMet, hasRosc, isCardiacArrestCase);
+                        const effectiveEffects = dedupeMessages(
+                          getDisplayedEffects(command, patient, completionTimes, diagnosisMet, hasRosc, isCardiacArrestCase)
+                        );
                         return (
                           <button
                             className={`command command-${effectiveGrade}`}
