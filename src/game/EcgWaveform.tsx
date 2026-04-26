@@ -5,6 +5,7 @@ type Props = {
   hr: number;
   shock: number;
   status: GameStatus;
+  rhythmHint?: Rhythm;
 };
 
 type Rhythm = "sinus" | "bradycardia" | "vt" | "vf" | "asystole";
@@ -14,17 +15,17 @@ const LINE_COLOR = "#74ff93";
 const GLOW_COLOR = "rgba(116,255,147,0.9)";
 const BG_COLOR = "#06110b";
 
-function getRhythm(shock: number, status: GameStatus, lostSec: number): Rhythm {
-  if (status === "lost") return lostSec < 2.5 ? "vf" : "asystole";
+function getRhythm(shock: number, status: GameStatus, lostSec: number, rhythmHint?: Rhythm): Rhythm {
+  if (status === "lost") return rhythmHint === "vf" && lostSec < 2.5 ? "vf" : "asystole";
   if (status === "won") return "sinus";
+  if (rhythmHint) return rhythmHint;
   if (shock >= 94) return "bradycardia";
   if (shock >= 88) return "vt";
   return "sinus";
 }
 
 function getRr(hr: number, rhythm: Rhythm): number {
-  if (rhythm === "bradycardia") return 60 / 42;
-  if (rhythm === "vt") return 60 / 180;
+  if (rhythm === "vf" || rhythm === "asystole") return 1;
   return 60 / Math.max(20, hr);
 }
 
@@ -66,7 +67,7 @@ function getY(t: number, rhythm: Rhythm, rr: number): number {
   return rhythm === "vt" ? vtWave(phase) : pqrst(phase);
 }
 
-export function EcgWaveform({ hr, shock, status }: Props) {
+export function EcgWaveform({ hr, shock, status, rhythmHint }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
   const startRef = useRef(performance.now());
@@ -136,7 +137,7 @@ export function EcgWaveform({ hr, shock, status }: Props) {
       }
 
       const lostSec = lostAtRef.current !== null ? (now - lostAtRef.current) / 1000 : 0;
-      const rhythm = getRhythm(shockRef.current, statusRef.current, lostSec);
+      const rhythm = getRhythm(shockRef.current, statusRef.current, lostSec, rhythmHint);
       const rr = getRr(hrRef.current, rhythm);
       const renderNow = frozenAtRef.current ?? now;
       const currentT = (renderNow - startRef.current) / 1000;

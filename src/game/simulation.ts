@@ -266,7 +266,7 @@ export function getOutcome(
 
 export function commandTone(grade: CommandGrade): LogEntry["tone"] {
   if (grade === "best") return "good";
-  if (grade === "harmful") return "bad";
+  if (grade === "harmful" || grade === "worst") return "bad";
   if (grade === "ineffective") return "warn";
   return "neutral";
 }
@@ -276,7 +276,8 @@ export function gradeLabel(grade: CommandGrade) {
     best: "最善手",
     acceptable: "許容手",
     ineffective: "無効手",
-    harmful: "有害手"
+    harmful: "有害手",
+    worst: "最悪手（禁忌）"
   };
   return labels[grade];
 }

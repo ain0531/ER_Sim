@@ -79,10 +79,10 @@ export const tensionPneumothoraxCommandProfiles: Record<CommandId, CaseCommandPr
     stateDelta: { oxygenation: 10, breathing: 4 }
   },
   niv: {
-    grade: "harmful",
+    grade: "worst",
     requiredConditions: ["循環が安定", "気胸が否定的"],
-    effects: ["陽圧で緊張性気胸を悪化させる"],
-    stateDelta: { oxygenation: -8, breathing: -10, circulation: -12, shock: 15 }
+    effects: ["陽圧で緊張性気胸を急激に悪化させる", "禁忌に近く最悪手として扱う"],
+    stateDelta: { oxygenation: -18, breathing: -18, circulation: -22, shock: 30, consciousness: -14 }
   },
   ventilator: {
     grade: "harmful",
@@ -113,6 +113,38 @@ export const tensionPneumothoraxCommandProfiles: Record<CommandId, CaseCommandPr
       { commandIds: ["iv"], message: "ルート確保が必要" },
       { commandIds: ["ecgMonitor", "bpCuff"], message: "心電図・血圧計の装着が必要" }
     ]
+  },
+  cardioversion: {
+    grade: "worst",
+    requiredConditions: ["心房細動または心房粗動", "同期通電の適応"],
+    effects: ["適応外通電で心停止に至る", "禁忌として最悪手に分類"],
+    stateDelta: { shock: 70, circulation: -70, oxygenation: -55, consciousness: -45 }
+  },
+  defibrillation: {
+    grade: "worst",
+    requiredConditions: ["心室頻拍または心室細動", "除細動の適応"],
+    effects: ["適応外通電で心停止に至る", "禁忌として最悪手に分類"],
+    stateDelta: { shock: 70, circulation: -70, oxygenation: -55, consciousness: -45 }
+  },
+  adrenalineIvBolus: {
+    grade: "worst",
+    requiredConditions: ["ルート確保完了", "心停止またはアナフィラキシー等の適応"],
+    effects: ["根本治療ではなく、減圧を遅らせる", "重篤な循環悪化を招く最悪手"],
+    stateDelta: { shock: 24, circulation: -16, oxygenation: -10, consciousness: -10 },
+    requiresCompleted: [{ commandIds: ["iv"], message: "ルート確保が必要" }]
+  },
+  adrenalineIm: {
+    grade: "ineffective",
+    requiredConditions: ["アナフィラキシーの適応"],
+    effects: ["本症例の主病態には直結しない"],
+    stateDelta: { shock: 2 }
+  },
+  atropineIvBolus: {
+    grade: "ineffective",
+    requiredConditions: ["ルート確保完了", "症候性徐脈の適応"],
+    effects: ["本症例では主病態の改善に乏しい"],
+    stateDelta: { shock: 2 },
+    requiresCompleted: [{ commandIds: ["iv"], message: "ルート確保が必要" }]
   },
   transfusion: {
     grade: "ineffective",
@@ -183,11 +215,11 @@ export const winCondition: WinCondition = {
 
 export const progression: ProgressionRule = {
   uncontrolledDelta: {
-    oxygenation: -0.24,
-    breathing: -0.22,
-    circulation: -0.2,
-    shock: 0.28,
-    consciousness: -0.08
+    oxygenation: -0.12,
+    breathing: -0.11,
+    circulation: -0.08,
+    shock: 0.07,
+    consciousness: -0.04
   },
   controlledMultiplier: 0.2
 };
@@ -195,7 +227,7 @@ export const progression: ProgressionRule = {
 export const lossCondition: LossCondition = {
   minBpSys: 55,
   maxShock: 98,
-  maxElapsed: 300
+  maxElapsed: 180
 };
 
 export const tensionPneumothoraxCase: GameCase = {

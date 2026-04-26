@@ -16,7 +16,6 @@ import {
   gradeLabel,
   isCommandComplete,
   progressPatient,
-  shuffleCommands
 } from "./game/simulation";
 import type { Command, CommandCategoryId, CompletionTimes, GameCase, GameStatus, LogEntry, PatientState } from "./game/types";
 
@@ -43,6 +42,13 @@ function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+const commandDisplayOrder = {
+  confirm: 0,
+  test: 1,
+  procedure: 2,
+  medication: 3
+} as const;
+
 type PopupState = {
   message: string;
   imageSrc?: string;
@@ -53,13 +59,65 @@ function getAssetUrl(path: string) {
   return `${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
 }
 
+function clampTone(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function createAudioContext() {
+  const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  return AudioContextCtor ? new AudioContextCtor() : null;
+}
+
+function playTone(
+  context: AudioContext,
+  {
+    frequency,
+    duration,
+    volume,
+    type
+  }: {
+    frequency: number;
+    duration: number;
+    volume: number;
+    type: OscillatorType;
+  }
+) {
+  const oscillator = context.createOscillator();
+  const gainNode = context.createGain();
+  const startAt = context.currentTime;
+
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, startAt);
+  gainNode.gain.setValueAtTime(0.0001, startAt);
+  gainNode.gain.exponentialRampToValueAtTime(volume, startAt + 0.008);
+  gainNode.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+
+  oscillator.connect(gainNode);
+  gainNode.connect(context.destination);
+
+  oscillator.start(startAt);
+  oscillator.stop(startAt + duration + 0.02);
+}
+
+function playMonitorBeat(context: AudioContext, spo2: number) {
+  const frequency = clampTone(520 + (spo2 - 72) * 22, 420, 1200);
+  playTone(context, { frequency, duration: 0.07, volume: 0.11, type: "square" });
+}
+
+function playWarningBeep(context: AudioContext) {
+  playTone(context, { frequency: 1320, duration: 2, volume: 0.08, type: "triangle" });
+}
+
+function playToggleBeep(context: AudioContext) {
+  playTone(context, { frequency: 740, duration: 0.08, volume: 0.1, type: "sine" });
+}
+
 export function App() {
   const [activeCase, setActiveCase] = useState<GameCase>(gameCases[0]);
   const { commands, initialPatient, lossCondition, progression, winCondition } = activeCase;
   const [patient, setPatient] = useState(activeCase.initialPatient);
   const [status, setStatus] = useState<GameStatus>("ready");
   const [openCategories, setOpenCategories] = useState<CommandCategoryId[]>([]);
-  const [shuffledCommands, setShuffledCommands] = useState<Command[]>(() => shuffleCommands(commands));
   const [categoryLocks, setCategoryLocks] = useState<Partial<Record<CommandCategoryId, number>>>({});
   const [completionTimes, setCompletionTimes] = useState<CompletionTimes>({});
   const [debugOpen, setDebugOpen] = useState(false);
@@ -71,7 +129,49 @@ export function App() {
   const [seenAlerts, setSeenAlerts] = useState<Record<string, boolean>>({});
   const [seenEndPopup, setSeenEndPopup] = useState(false);
   const [diagnosedMassiveHemorrhage, setDiagnosedMassiveHemorrhage] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [selectedMonitorRhythm, setSelectedMonitorRhythm] = useState<GameCase["metadata"]["monitorRhythm"] | "bradycardia">(
+    () => activeCase.metadata.monitorRhythms?.[Math.floor(Math.random() * activeCase.metadata.monitorRhythms.length)] ?? activeCase.metadata.monitorRhythm
+  );
   const logListRef = useRef<HTMLDivElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const beatTimerRef = useRef<number | null>(null);
+  const warningTimerRef = useRef<number | null>(null);
+  const hrRef = useRef(patient.hr);
+  const spo2Ref = useRef(patient.spo2);
+  const hasEcgMonitorRef = useRef(false);
+  const hasSpo2MonitorRef = useRef(false);
+
+  async function ensureAudioContext() {
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    if (!audioContextRef.current) {
+      audioContextRef.current = createAudioContext();
+    }
+
+    if (!audioContextRef.current) {
+      return null;
+    }
+
+    if (audioContextRef.current.state === "suspended") {
+      await audioContextRef.current.resume();
+    }
+
+    return audioContextRef.current;
+  }
+
+  function stopSoundTimers() {
+    if (beatTimerRef.current !== null) {
+      window.clearTimeout(beatTimerRef.current);
+      beatTimerRef.current = null;
+    }
+    if (warningTimerRef.current !== null) {
+      window.clearInterval(warningTimerRef.current);
+      warningTimerRef.current = null;
+    }
+  }
 
   useEffect(() => {
     if (status !== "running" || popupState) {
@@ -125,8 +225,15 @@ export function App() {
   const hasEcgMonitor = isCommandComplete("ecgMonitor", patient, completionTimes);
   const hasTemperatureMeasurement = isCommandComplete("temperatureMeasurement", patient, completionTimes);
   const hasConsciousnessCheck = isCommandComplete("consciousnessCheck", patient, completionTimes);
+  const hasRadialPulseCheck = isCommandComplete("radialPulseCheck", patient, completionTimes);
   const hasCirculationAssessment = hasBpCuff && hasEcgMonitor;
   const inspectionFindings = activeCase.metadata.inspectionFindings ?? {};
+  const radialPulseAbsent =
+    hasRadialPulseCheck &&
+    Boolean(inspectionFindings.radialPulseCheck?.includes("触知しない"));
+  const bpDisplay = hasBpCuff ? (radialPulseAbsent ? "測定不能" : `${patient.bpSys}/${patient.bpDia}`) : "--/--";
+  const spo2Display = hasSpo2Monitor ? (radialPulseAbsent ? "測定不能" : `${patient.spo2}%`) : "--%";
+  const monitorRhythmHint = selectedMonitorRhythm;
   const hasFastPositiveFinding = isCommandComplete("fast", patient, completionTimes) && Boolean(inspectionFindings.fast);
   const diagnosisCandidateVisible =
     winCondition.diagnosisRule !== undefined &&
@@ -151,6 +258,31 @@ export function App() {
   const stabilizationScore = 35 * stabilizationRate;
   const commandScore = Math.max(0, Math.min(30, commandQualityRaw));
   const totalScore = clampScore(timeScore + stabilizationScore + commandScore);
+  const orderedCommands = useMemo(
+    () =>
+      [...commands].sort((left, right) => {
+        const byDisplayKind = commandDisplayOrder[left.displayKind] - commandDisplayOrder[right.displayKind];
+        if (byDisplayKind !== 0) {
+          return byDisplayKind;
+        }
+        return 0;
+      }),
+    [commands]
+  );
+  const hasAbnormalVitals =
+    (hasBpCuff && patient.bpSys <= 90) ||
+    (hasEcgMonitor && (patient.hr >= 130 || patient.hr <= 45)) ||
+    (hasSpo2Monitor && patient.spo2 <= 92);
+
+  useEffect(() => {
+    hrRef.current = patient.hr;
+    spo2Ref.current = patient.spo2;
+  }, [patient.hr, patient.spo2]);
+
+  useEffect(() => {
+    hasEcgMonitorRef.current = hasEcgMonitor;
+    hasSpo2MonitorRef.current = hasSpo2Monitor;
+  }, [hasEcgMonitor, hasSpo2Monitor]);
 
   useEffect(() => {
     if (computedDiagnosisMet && !diagnosedMassiveHemorrhage) {
@@ -207,7 +339,76 @@ export function App() {
     }
   }, [popupState, seenEndPopup, status]);
 
-  function start() {
+  useEffect(() => {
+    stopSoundTimers();
+
+    if (!soundEnabled || status !== "running" || popupState || !hasEcgMonitor) {
+      return;
+    }
+
+    let disposed = false;
+
+    const scheduleBeat = async () => {
+      if (disposed) {
+        return;
+      }
+
+      const context = await ensureAudioContext();
+      if (!context || disposed || !hasEcgMonitorRef.current || monitorRhythmHint === "vf" || monitorRhythmHint === "asystole") {
+        return;
+      }
+
+      playMonitorBeat(context, hasSpo2MonitorRef.current ? spo2Ref.current : 60);
+      beatTimerRef.current = window.setTimeout(scheduleBeat, 60000 / Math.max(20, hrRef.current));
+    };
+
+    void scheduleBeat();
+
+    return () => {
+      disposed = true;
+      stopSoundTimers();
+    };
+  }, [hasEcgMonitor, monitorRhythmHint, popupState, soundEnabled, status]);
+
+  useEffect(() => {
+    if (!soundEnabled || status !== "running" || popupState || !hasAbnormalVitals) {
+      if (warningTimerRef.current !== null) {
+        window.clearInterval(warningTimerRef.current);
+        warningTimerRef.current = null;
+      }
+      return;
+    }
+
+    let disposed = false;
+
+    const triggerWarning = async () => {
+      const context = await ensureAudioContext();
+      if (!context || disposed) {
+        return;
+      }
+      playWarningBeep(context);
+    };
+
+    void triggerWarning();
+    warningTimerRef.current = window.setInterval(() => {
+      void triggerWarning();
+    }, 3000);
+
+    return () => {
+      disposed = true;
+      if (warningTimerRef.current !== null) {
+        window.clearInterval(warningTimerRef.current);
+        warningTimerRef.current = null;
+      }
+    };
+  }, [hasAbnormalVitals, popupState, soundEnabled, status]);
+
+  useEffect(() => () => stopSoundTimers(), []);
+
+  async function start() {
+    if (soundEnabled) {
+      await ensureAudioContext();
+    }
     setStatus("running");
     setLog((current) => [...current, { time: 0, message: "シミュレーション開始。出血性ショックとして初期対応を進めます。", tone: "neutral", kind: "system" }]);
   }
@@ -221,14 +422,17 @@ export function App() {
     setPatient(nextCase.initialPatient);
     setStatus("ready");
     setOpenCategories([]);
-    setShuffledCommands(shuffleCommands(nextCase.commands));
     setCategoryLocks({});
     setCompletionTimes({});
     setSeenAlerts({});
     setSeenEndPopup(false);
     setDiagnosedMassiveHemorrhage(false);
     setPopupState(null);
+    setSelectedMonitorRhythm(
+      nextCase.metadata.monitorRhythms?.[Math.floor(Math.random() * nextCase.metadata.monitorRhythms.length)] ?? nextCase.metadata.monitorRhythm
+    );
     setLog([{ time: 0, message: nextCase.metadata.initialLogs[nextGender], tone: "neutral", kind: "system" }]);
+    stopSoundTimers();
   }
 
   function selectCase(caseId: string) {
@@ -278,6 +482,19 @@ export function App() {
       ]);
       return next;
     });
+  }
+
+  async function toggleSound() {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    if (next) {
+      const context = await ensureAudioContext();
+      if (context) {
+        playToggleBeep(context);
+      }
+      return;
+    }
+    stopSoundTimers();
   }
 
   return (
@@ -430,7 +647,7 @@ export function App() {
 
           {hasEcgMonitor ? (
             <div className="waveform" aria-label="心電図波形">
-              <EcgWaveform hr={patient.hr} shock={patient.shock} status={status} />
+              <EcgWaveform hr={patient.hr} shock={patient.shock} status={status} rhythmHint={monitorRhythmHint} />
             </div>
           ) : (
             <div className="waveform waveform-off">心電図 未装着</div>
@@ -445,12 +662,12 @@ export function App() {
             <div className="vital pressure">
               <Activity size={22} />
               <span>BP</span>
-              <strong>{hasBpCuff ? `${patient.bpSys}/${patient.bpDia}` : "--/--"}</strong>
+              <strong>{bpDisplay}</strong>
             </div>
             <div className="vital oxygen">
               <Droplets size={22} />
               <span>SpO2</span>
-              <strong>{hasSpo2Monitor ? `${patient.spo2}%` : "--%"}</strong>
+              <strong>{spo2Display}</strong>
             </div>
             <div className="vital temp">
               <Stethoscope size={22} />
@@ -513,6 +730,9 @@ export function App() {
               <Play size={18} />
               開始
             </button>
+            <button className={`sound-action ${soundEnabled ? "sound-on" : ""}`} onClick={() => void toggleSound()} type="button">
+              {soundEnabled ? "サウンドON" : "サウンドOFF"}
+            </button>
             <button className="icon-action" onClick={reset} title="リセット" aria-label="リセット">
               <RotateCcw size={18} />
             </button>
@@ -526,7 +746,7 @@ export function App() {
           <div className="command-accordion">
             {commandCategories.map((category) => {
               const expanded = openCategories.includes(category.id);
-              const categoryCommands = shuffledCommands.filter((command) => command.category === category.id);
+              const categoryCommands = orderedCommands.filter((command) => command.category === category.id);
 
               return (
                 <section className="command-category" key={category.id}>

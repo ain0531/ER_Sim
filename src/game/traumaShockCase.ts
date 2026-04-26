@@ -183,6 +183,31 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
     ],
     bonusDelta: { requiresCompleted: ["sheath"], delta: { bpSys: 6.75, bleeding: -3 } }
   },
+  cardioversion: {
+    grade: "worst",
+    requiredConditions: ["心房細動または心房粗動", "同期通電の適応"],
+    effects: ["適応外通電で心停止に至る", "禁忌として最悪手に分類"],
+    stateDelta: { shock: 70, circulation: -70, oxygenation: -55, consciousness: -45 }
+  },
+  defibrillation: {
+    grade: "worst",
+    requiredConditions: ["心室頻拍または心室細動", "除細動の適応"],
+    effects: ["適応外通電で心停止に至る", "禁忌として最悪手に分類"],
+    stateDelta: { shock: 70, circulation: -70, oxygenation: -55, consciousness: -45 }
+  },
+  adrenalineIvBolus: {
+    grade: "worst",
+    requiredConditions: ["ルート確保完了", "心停止またはアナフィラキシー等の適応"],
+    effects: ["過度のカテコラミン負荷で重篤な循環悪化を招く", "禁忌として最悪手に分類"],
+    stateDelta: { shock: 24, bleeding: 12, circulation: -16, oxygenation: -10, consciousness: -10 },
+    requiresCompleted: [vascularAccessRequirement]
+  },
+  adrenalineIm: {
+    grade: "ineffective",
+    requiredConditions: ["アナフィラキシーの適応"],
+    effects: ["本症例では主病態に寄与しない", "決定的な改善は得られない"],
+    stateDelta: { shock: 2 }
+  },
   vasopressor: {
     grade: "harmful",
     requiredConditions: ["ルート確保完了", "輸液反応性が乏しい", "血管拡張性ショック疑い"],
@@ -195,6 +220,13 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
       effects: ["血圧を一時的に維持", "大量輸液・輸血後の補助として許容", "根本的な出血制御ではない"],
       stateDelta: { bpSys: 18, shock: 2, bleeding: 2 }
     }
+  },
+  atropineIvBolus: {
+    grade: "harmful",
+    requiredConditions: ["ルート確保完了", "症候性徐脈の適応"],
+    effects: ["適応外投与で循環評価を乱す", "本症例では有害手"],
+    stateDelta: { shock: 7, circulation: -2 },
+    requiresCompleted: [vascularAccessRequirement]
   },
   transfusion: {
     grade: "best",
@@ -340,11 +372,11 @@ export const winRequirements: CommandId[] = winCondition.requiredCommands;
 
 export const progression: ProgressionRule = {
   uncontrolledDelta: {
-    bleeding: 0.18,
-    shock: 0.25,
-    circulation: -0.19,
-    consciousness: -0.08,
-    oxygenation: -0.04
+    bleeding: 0.06,
+    shock: 0.08,
+    circulation: -0.06,
+    consciousness: -0.04,
+    oxygenation: -0.02
   },
   controlledMultiplier: 0.25,
   suppressedByCompleted: [{ stateKey: "bleeding", commandIds: ["ivr"] }]
@@ -353,7 +385,7 @@ export const progression: ProgressionRule = {
 export const lossCondition: LossCondition = {
   minBpSys: 55,
   maxShock: 98,
-  maxElapsed: 360
+  maxElapsed: 180
 };
 
 export const traumaShockCase: GameCase = {

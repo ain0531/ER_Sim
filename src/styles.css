@@ -393,8 +393,9 @@ h2 {
 .vital strong {
   display: block;
   margin-top: 4px;
-  font-size: clamp(18px, 2.4vw, 24px);
-  line-height: 1;
+  font-size: clamp(36px, 4.8vw, 52px);
+  line-height: 0.88;
+  letter-spacing: -0.02em;
 }
 
 .heart strong {
@@ -560,6 +561,21 @@ h2 {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.sound-action {
+  min-width: 78px;
+  min-height: 38px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.sound-on {
+  border-color: rgba(111, 239, 143, 0.42);
+  color: #b8ffd0;
+  background: rgba(39, 114, 74, 0.34);
+}
+
 .primary-action:hover,
 .icon-action:hover,
 .category-actions button:hover,
@@ -667,6 +683,11 @@ button:disabled {
 
 .command-harmful {
   border-left: 4px solid #ee6b6b;
+}
+
+.command-worst {
+  border-left: 4px solid #ff2f2f;
+  background: rgba(126, 16, 16, 0.22);
 }
 
 .log-panel {

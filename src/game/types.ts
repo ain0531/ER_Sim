@@ -24,7 +24,12 @@ export type CommandId =
   | "ecmo"
   | "pericardiocentesis"
   | "massiveFluid"
+  | "cardioversion"
+  | "defibrillation"
+  | "adrenalineIvBolus"
+  | "adrenalineIm"
   | "vasopressor"
+  | "atropineIvBolus"
   | "transfusion"
   | "ivr"
   | "surgeryContact"
@@ -40,8 +45,9 @@ export type CommandId =
   | "chestXray";
 
 export type GameStatus = "ready" | "running" | "won" | "lost";
-export type CommandGrade = "best" | "acceptable" | "ineffective" | "harmful";
+export type CommandGrade = "best" | "acceptable" | "ineffective" | "harmful" | "worst";
 export type CommandCategoryId = "A" | "B" | "C" | "D" | "E" | "X";
+export type CommandDisplayKind = "confirm" | "test" | "procedure" | "medication";
 
 export type PatientState = {
   elapsed: number;
@@ -64,6 +70,7 @@ export type PatientState = {
 export type BaseCommand = {
   id: CommandId;
   category: CommandCategoryId;
+  displayKind: CommandDisplayKind;
   label: string;
   duration: number;
   blocksCategory?: boolean;
@@ -149,6 +156,8 @@ export type GameCase = {
     locationLabel: string;
     category: string;
     tags?: string[];
+    monitorRhythm?: "sinus" | "vt" | "vf" | "asystole";
+    monitorRhythms?: ("sinus" | "vt" | "vf" | "asystole" | "bradycardia")[];
     difficulty: string;
     summary: string;
     emsBriefs: { male: string; female: string };
