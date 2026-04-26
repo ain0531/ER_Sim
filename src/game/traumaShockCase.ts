@@ -183,6 +183,12 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
     ],
     bonusDelta: { requiresCompleted: ["sheath"], delta: { bpSys: 6.75, bleeding: -3 } }
   },
+  cpr: {
+    grade: "harmful",
+    requiredConditions: ["心肺停止が明確な場合"],
+    effects: ["不必要な胸骨圧迫が出血を悪化させる"],
+    stateDelta: { bleeding: 8, shock: 12, circulation: -6 }
+  },
   cardioversion: {
     grade: "worst",
     requiredConditions: ["心房細動または心房粗動", "同期通電の適応"],

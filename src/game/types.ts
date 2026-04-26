@@ -24,6 +24,7 @@ export type CommandId =
   | "ecmo"
   | "pericardiocentesis"
   | "massiveFluid"
+  | "cpr"
   | "cardioversion"
   | "defibrillation"
   | "adrenalineIvBolus"

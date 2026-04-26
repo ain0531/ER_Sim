@@ -18,7 +18,7 @@ import {
   isCommandComplete,
   progressPatient,
 } from "./game/simulation";
-import type { Command, CommandCategoryId, CompletionTimes, GameCase, GameStatus, LogEntry, PatientState } from "./game/types";
+import type { Command, CommandCategoryId, CommandGrade, CompletionTimes, GameCase, GameStatus, LogEntry, PatientState } from "./game/types";
 
 function getFaceCell(
   patient: PatientState,
@@ -157,6 +157,13 @@ export function App() {
     { time: 0, message: activeCase.metadata.initialLogs[gender], tone: "neutral", kind: "system" }
   ]);
   const [popupState, setPopupState] = useState<PopupState | null>(null);
+  const [caseDropdownOpen, setCaseDropdownOpen] = useState(false);
+  const caseDropdownRef = useRef<HTMLDivElement>(null);
+  const [pendingDefibrillation, setPendingDefibrillation] = useState<{
+    command: Command;
+    completesAt: number;
+    effectiveGrade: CommandGrade;
+  } | null>(null);
   const [seenAlerts, setSeenAlerts] = useState<Record<string, boolean>>({});
   const [seenEndPopup, setSeenEndPopup] = useState(false);
   const [diagnosedMassiveHemorrhage, setDiagnosedMassiveHemorrhage] = useState(false);
@@ -208,13 +215,52 @@ export function App() {
   }
 
   useEffect(() => {
+    if (!caseDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (caseDropdownRef.current && !caseDropdownRef.current.contains(e.target as Node)) {
+        setCaseDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [caseDropdownOpen]);
+
+  useEffect(() => {
     if (status !== "running" || popupState) {
       return;
     }
 
     const timer = window.setInterval(() => {
       setPatient((current) => {
-        const next = progressPatient(current, completionTimes, winCondition, progression, diagnosedMassiveHemorrhage);
+        let next = progressPatient(current, completionTimes, winCondition, progression, diagnosedMassiveHemorrhage);
+
+        if (pendingDefibrillation && next.elapsed >= pendingDefibrillation.completesAt) {
+          const { command: defibCommand, effectiveGrade } = pendingDefibrillation;
+          next = applyCommand(next, defibCommand, completionTimes, diagnosedMassiveHemorrhage);
+
+          if (activeCase.id.startsWith("cardiac-arrest-") && (selectedMonitorRhythm === "vf" || selectedMonitorRhythm === "vt")) {
+            const nextAttempts = rhythmRecoveryAttempts + 1;
+            setRhythmRecoveryAttempts(nextAttempts);
+            if (nextAttempts >= rhythmRecoveryTarget && effectiveGrade !== "worst") {
+              setSelectedMonitorRhythm("sinus");
+              setHasDetectableBloodPressure(true);
+              setHasRosc(true);
+              next = deriveVitals({
+                ...next,
+                circulation: Math.max(next.circulation, 68),
+                oxygenation: Math.max(next.oxygenation, 56),
+                breathing: Math.max(next.breathing, 52),
+                shock: Math.min(next.shock, 42),
+                consciousness: Math.max(next.consciousness, 48)
+              });
+              setLog((entries) => [...entries, { time: next.elapsed, message: "自己心拍が再開し、正常洞調律へ復帰した。", tone: "good", kind: "system" }]);
+              setStatus("won");
+            }
+          }
+
+          setPendingDefibrillation(null);
+        }
+
         const nextDiagnosisMet = diagnosedMassiveHemorrhage || isDiagnosisMet(next, completionTimes, winCondition);
         if (nextDiagnosisMet && !diagnosedMassiveHemorrhage) {
           setDiagnosedMassiveHemorrhage(true);
@@ -228,7 +274,7 @@ export function App() {
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [completionTimes, diagnosedMassiveHemorrhage, popupState, status]);
+  }, [activeCase.id, completionTimes, diagnosedMassiveHemorrhage, popupState, status, pendingDefibrillation, rhythmRecoveryAttempts, rhythmRecoveryTarget, selectedMonitorRhythm]);
 
   useEffect(() => {
     if (!logListRef.current) {
@@ -468,7 +514,7 @@ export function App() {
       await ensureAudioContext();
     }
     setStatus("running");
-    setLog((current) => [...current, { time: 0, message: "シミュレーション開始。出血性ショックとして初期対応を進めます。", tone: "neutral", kind: "system" }]);
+    setLog((current) => [...current, { time: 0, message: "シミュレーション開始。救急患者の初期対応を始めます。", tone: "neutral", kind: "system" }]);
   }
 
   function reset() {
@@ -489,6 +535,7 @@ export function App() {
     setDiagnosedMassiveHemorrhage(false);
     setHasRosc(false);
     setPopupState(null);
+    setPendingDefibrillation(null);
     setSelectedMonitorRhythm(nextMonitorRhythm);
     setHasDetectableBloodPressure(!nextCase.id.startsWith("cardiac-arrest-"));
     setRhythmRecoveryTarget(Math.floor(Math.random() * 5) + 1);
@@ -515,6 +562,29 @@ export function App() {
     const lockedUntil = categoryLocks[command.category] ?? 0;
     const blockReason = getCommandBlockReason(command, patient, completionTimes, winCondition, diagnosisMet);
     if ((command.blocksCategory !== false && lockedUntil > patient.elapsed) || blockReason) {
+      return;
+    }
+
+    if (command.id === "defibrillation") {
+      if (pendingDefibrillation !== null) return;
+      const effectiveGrade = getDisplayedGrade(command, patient, completionTimes, diagnosisMet, hasRosc, isCardiacArrestCase);
+      const effectiveEffects = dedupeMessages(getDisplayedEffects(command, patient, completionTimes, diagnosisMet, hasRosc, isCardiacArrestCase));
+      const completesAt = patient.elapsed + command.duration;
+      setPatient((current) => {
+        const next = { ...current };
+        if (!next.performed.includes(command.id)) {
+          next.performed = [...next.performed, command.id];
+        }
+        return deriveVitals(next);
+      });
+      setCompletionTimes((ct) => ({ ...ct, [command.id]: completesAt }));
+      setPendingDefibrillation({ command, completesAt, effectiveGrade });
+      setLog((entries) => [...entries, {
+        time: patient.elapsed,
+        message: getLogSummary(command, effectiveEffects),
+        tone: commandTone(effectiveGrade),
+        kind: "action"
+      }]);
       return;
     }
 
@@ -615,16 +685,30 @@ export function App() {
           <p className="eyebrow">{activeCase.metadata.locationLabel}</p>
           <h1>{activeCase.metadata.title}</h1>
         </div>
-        <label className="case-select">
+        <div className="case-select" ref={caseDropdownRef}>
           <span>症例</span>
-          <select value={activeCase.id} onChange={(event) => selectCase(event.target.value)}>
-            {gameCases.map((gameCase) => (
-              <option key={gameCase.id} value={gameCase.id}>
-                {gameCase.metadata.title}
-              </option>
-            ))}
-          </select>
-        </label>
+          <button
+            className={`case-select-btn${caseDropdownOpen ? " open" : ""}`}
+            onClick={() => setCaseDropdownOpen((v) => !v)}
+            type="button"
+          >
+            {activeCase.metadata.title}
+            <ChevronDown size={14} />
+          </button>
+          {caseDropdownOpen && (
+            <ul className="case-select-list">
+              {gameCases.map((gameCase) => (
+                <li
+                  key={gameCase.id}
+                  className={gameCase.id === activeCase.id ? "active" : ""}
+                  onClick={() => { selectCase(gameCase.id); setCaseDropdownOpen(false); }}
+                >
+                  {gameCase.metadata.title}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         <div className={`status-pill status-${status}`}>
           {status === "ready" && "待機中"}
           {status === "running" && "対応中"}

@@ -109,6 +109,7 @@ h2 {
   min-width: min(260px, 100%);
   gap: 4px;
   margin-left: auto;
+  position: relative;
 }
 
 .case-select span {
@@ -117,19 +118,60 @@ h2 {
   font-weight: 900;
 }
 
-.case-select select {
+.case-select-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   min-height: 36px;
+  min-width: 200px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   color: #eef7f2;
   background: #0d2018;
-  padding: 6px 8px;
+  padding: 6px 10px;
   font: inherit;
   font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  forced-color-adjust: none;
 }
 
-.case-select select option {
+.case-select-btn:hover {
+  background: #142c1e;
+}
+
+.case-select-btn.open {
+  border-color: #74ff93;
+}
+
+.case-select-list {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 100;
+  margin: 2px 0 0;
+  padding: 4px 0;
+  list-style: none;
   background: #0d2018;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  min-width: 100%;
+  white-space: nowrap;
+  forced-color-adjust: none;
+}
+
+.case-select-list li {
+  padding: 8px 12px;
   color: #eef7f2;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.case-select-list li:hover {
+  background: #142c1e;
+}
+
+.case-select-list li.active {
+  color: #74ff93;
 }
 
 .status-running {

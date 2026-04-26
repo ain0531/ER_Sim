@@ -60,6 +60,15 @@ function createDefaultArrestProfiles(): Record<CommandId, CaseCommandProfile> {
       };
     }
 
+    if (command.id === "cpr") {
+      profile = {
+        grade: "best",
+        requiredConditions: ["心肺停止"],
+        effects: ["胸骨圧迫により循環を補助する"],
+        stateDelta: { circulation: 5, shock: -4, oxygenation: 3 }
+      };
+    }
+
     if (["cardioversion", "defibrillation", "adrenalineIm", "plainCt", "chestXray", "fast"].includes(command.id)) {
       profile = {
         grade: "harmful",
@@ -193,7 +202,7 @@ export const ventricularFibrillationCase = createArrestCase({
     performed: []
   },
   winCondition: {
-    requiredCommands: ["ecgMonitor", "defibrillation", "iv", "adrenalineIvBolus", "intubation"],
+    requiredCommands: ["ecgMonitor", "cpr", "defibrillation", "iv", "adrenalineIvBolus", "intubation"],
     stabilization: {
       minBpSys: 80,
       maxShock: 70
@@ -215,7 +224,8 @@ export const ventricularFibrillationCase = createArrestCase({
       grade: "best",
       requiredConditions: ["心室細動", "除細動適応"],
       effects: ["除細動を行い自己心拍再開を目指す"],
-      stateDelta: { circulation: 16, shock: -18, oxygenation: 8 }
+      stateDelta: { circulation: 16, shock: -18, oxygenation: 8 },
+      requiresCompleted: [{ commandIds: ["cpr"], message: "心肺蘇生を先に開始してください" }]
     },
     cardioversion: {
       grade: "worst",
@@ -259,7 +269,7 @@ export const ventricularTachycardiaCase = createArrestCase({
     performed: []
   },
   winCondition: {
-    requiredCommands: ["ecgMonitor", "defibrillation", "iv", "adrenalineIvBolus"],
+    requiredCommands: ["ecgMonitor", "cpr", "defibrillation", "iv", "adrenalineIvBolus"],
     stabilization: {
       minBpSys: 80,
       maxShock: 70
@@ -281,7 +291,8 @@ export const ventricularTachycardiaCase = createArrestCase({
       grade: "best",
       requiredConditions: ["脈なし心室性頻拍", "除細動適応"],
       effects: ["除細動を行う"],
-      stateDelta: { circulation: 14, shock: -16, oxygenation: 8 }
+      stateDelta: { circulation: 14, shock: -16, oxygenation: 8 },
+      requiresCompleted: [{ commandIds: ["cpr"], message: "心肺蘇生を先に開始してください" }]
     },
     cardioversion: {
       grade: "harmful",
@@ -325,7 +336,7 @@ export const asystoleCase = createArrestCase({
     performed: []
   },
   winCondition: {
-    requiredCommands: ["ecgMonitor", "iv", "adrenalineIvBolus", "intubation"],
+    requiredCommands: ["ecgMonitor", "cpr", "iv", "adrenalineIvBolus", "intubation"],
     stabilization: {
       minBpSys: 75,
       maxShock: 72
@@ -391,7 +402,7 @@ export const peaCase = createArrestCase({
     performed: []
   },
   winCondition: {
-    requiredCommands: ["ecgMonitor", "bpCuff", "iv", "adrenalineIvBolus", "intubation"],
+    requiredCommands: ["ecgMonitor", "cpr", "bpCuff", "iv", "adrenalineIvBolus", "intubation"],
     stabilization: {
       minBpSys: 75,
       maxShock: 72

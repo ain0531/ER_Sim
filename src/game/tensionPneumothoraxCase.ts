@@ -114,6 +114,12 @@ export const tensionPneumothoraxCommandProfiles: Record<CommandId, CaseCommandPr
       { commandIds: ["ecgMonitor", "bpCuff"], message: "心電図・血圧計の装着が必要" }
     ]
   },
+  cpr: {
+    grade: "harmful",
+    requiredConditions: ["心肺停止が明確な場合"],
+    effects: ["不適切な胸骨圧迫で気胸が悪化する"],
+    stateDelta: { breathing: -8, shock: 12, oxygenation: -6 }
+  },
   cardioversion: {
     grade: "worst",
     requiredConditions: ["心房細動または心房粗動", "同期通電の適応"],
