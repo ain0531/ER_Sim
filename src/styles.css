@@ -121,10 +121,15 @@ h2 {
   min-height: 36px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   color: #eef7f2;
-  background: rgba(255, 255, 255, 0.08);
+  background: #0d2018;
   padding: 6px 8px;
   font: inherit;
   font-size: 13px;
+}
+
+.case-select select option {
+  background: #0d2018;
+  color: #eef7f2;
 }
 
 .status-running {
