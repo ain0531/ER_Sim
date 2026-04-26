@@ -57,6 +57,14 @@ button {
   line-height: 1.35;
 }
 
+.popup-details {
+  margin: 0;
+  padding-left: 20px;
+  color: #d9e5dd;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
 .popup-image {
   width: 100%;
   max-height: 220px;
@@ -64,12 +72,183 @@ button {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.quiz-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 8, 6, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.quiz-card {
+  display: grid;
+  gap: 14px;
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 22px;
+  border: 1px solid rgba(255, 200, 100, 0.28);
+  background: linear-gradient(135deg, rgba(28, 40, 32, 0.99), rgba(10, 15, 12, 0.99));
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.4);
+}
+
+.quiz-command-label {
+  margin: 0;
+  color: #f4c762;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.quiz-prompt {
+  margin: 0;
+  color: #f4fbf6;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.3;
+}
+
+.quiz-choices {
+  display: grid;
+  gap: 8px;
+}
+
+.quiz-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.quiz-choice:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.quiz-choice-selected {
+  border-color: rgba(244, 199, 98, 0.6);
+  background: rgba(244, 199, 98, 0.1);
+}
+
+.quiz-choice input[type="radio"] {
+  flex-shrink: 0;
+  margin-top: 2px;
+  accent-color: #f4c762;
+}
+
+.quiz-choice span {
+  color: #dce7df;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.quiz-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.quiz-cancel {
+  padding: 0 16px;
+  min-height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: #c8d8cf;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  transition: border-color 0.14s ease;
+}
+
+.quiz-cancel:hover {
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.quiz-result {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.quiz-result-correct {
+  color: #67d989;
+}
+
+.quiz-result-incorrect {
+  color: #ff8c8c;
+}
+
+.quiz-explanation {
+  margin: 0;
+  padding: 12px;
+  color: #d9e5dd;
+  font-size: 14px;
+  line-height: 1.6;
+  background: rgba(255, 255, 255, 0.05);
+  border-left: 3px solid rgba(255, 255, 255, 0.2);
+}
+
 .case-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  flex-wrap: nowrap;
   gap: 16px;
   padding: 4px 0 12px;
+}
+
+.case-bar-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.stop-active {
+  border-color: rgba(255, 112, 112, 0.52);
+  color: #ffaaaa;
+  background: rgba(198, 50, 56, 0.22);
+}
+
+.hamburger-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.hamburger-button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: #eef7f2;
+  cursor: pointer;
+  transition: transform 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+
+.hamburger-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.hamburger-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 280px;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(135deg, rgba(22, 36, 29, 0.98), rgba(10, 15, 12, 0.98));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 .eyebrow {
@@ -108,7 +287,6 @@ h2 {
   display: grid;
   min-width: min(260px, 100%);
   gap: 4px;
-  margin-left: auto;
 }
 
 .case-select span {
@@ -149,7 +327,7 @@ h2 {
 
 .sim-grid {
   display: grid;
-  grid-template-columns: minmax(230px, 0.72fr) minmax(340px, 1fr) minmax(380px, 1.1fr);
+  grid-template-columns: minmax(232px, 0.72fr) minmax(340px, 1fr) minmax(380px, 1.1fr);
   gap: 12px;
 }
 
@@ -173,7 +351,7 @@ h2 {
 .patient-scene {
   position: relative;
   overflow: hidden;
-  height: 300px;
+  height: 150px;
   display: grid;
   place-items: center;
   background: rgba(11, 17, 14, 0.76);
@@ -381,26 +559,33 @@ h2 {
 }
 
 .vital {
-  min-height: 60px;
-  padding: 8px;
+  padding: 4px 8px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vital svg {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
 }
 
 .vital span {
-  display: block;
-  margin-top: 4px;
   color: #b8c8bf;
   font-size: 11px;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .vital strong {
-  display: block;
-  margin-top: 4px;
-  font-size: clamp(36px, 4.8vw, 52px);
-  line-height: 0.88;
+  margin-left: auto;
+  font-size: clamp(20px, 2.6vw, 30px);
+  line-height: 1;
   letter-spacing: -0.02em;
+  white-space: nowrap;
 }
 
 .heart strong {
@@ -417,6 +602,10 @@ h2 {
 
 .temp strong {
   color: #e1f2de;
+}
+
+.rr strong {
+  color: #c8b4f0;
 }
 
 .assessment-grid {
@@ -452,15 +641,10 @@ h2 {
 }
 
 .gcs-row {
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
   margin-top: 8px;
-  padding: 9px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.gcs-row strong {
-  font-size: 18px;
 }
 
 .result {
@@ -564,15 +748,6 @@ h2 {
   height: 38px;
   place-items: center;
   background: rgba(255, 255, 255, 0.08);
-}
-
-.sound-action {
-  min-width: 78px;
-  min-height: 38px;
-  padding: 0 10px;
-  background: rgba(255, 255, 255, 0.08);
-  font-size: 12px;
-  font-weight: 900;
 }
 
 .sound-on {
@@ -699,8 +874,17 @@ button:disabled {
   margin-top: 10px;
 }
 
-.log-panel h2 {
+.log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 8px;
+}
+
+.log-header span {
+  color: #9bb2a5;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .log-list {
@@ -801,7 +985,7 @@ button:disabled {
 
 @media (max-width: 1120px) {
   .sim-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(232px, 0.72fr) 1fr;
   }
 
   .command-panel {
@@ -818,20 +1002,13 @@ button:disabled {
     padding: 12px;
   }
 
-  .case-bar {
-    align-items: flex-start;
-    flex-direction: column;
+  .sim-grid {
+    grid-template-columns: minmax(232px, 0.72fr) 1fr;
   }
 
-  .case-select {
-    width: 100%;
-    margin-left: 0;
-  }
 
-  .sim-grid,
-  .vitals,
-  .assessment-grid {
-    grid-template-columns: 1fr;
+  .command-panel {
+    grid-column: 1 / -1;
   }
 
   .command-grid {
@@ -839,7 +1016,7 @@ button:disabled {
   }
 
   .patient-scene {
-    height: 380px;
+    height: 190px;
   }
 
   .patient-body-image {
@@ -848,8 +1025,4 @@ button:disabled {
     max-height: calc(100% - 20px);
   }
 
-  .monitor-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
 }

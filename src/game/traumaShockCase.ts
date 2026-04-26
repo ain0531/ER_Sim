@@ -91,6 +91,12 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
     effects: ["適応外では出血と遅延"],
     stateDelta: { bleeding: 8, shock: 9 }
   },
+  rrObservation: {
+    grade: "acceptable",
+    requiredConditions: ["B評価", "呼吸数の観察"],
+    effects: ["呼吸状態を評価する", "Primary Surveyを構成する"],
+    stateDelta: { shock: -1 }
+  },
   neckVeinCheck: {
     grade: "acceptable",
     requiredConditions: ["B評価", "頸静脈所見の確認"],
@@ -114,6 +120,12 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
     requiredConditions: ["B評価", "前胸部触診"],
     effects: ["外傷所見を確認", "Primary Surveyを構成する"],
     stateDelta: { bleeding: -2, shock: -2 }
+  },
+  chestAuscultation: {
+    grade: "acceptable",
+    requiredConditions: ["C評価", "呼吸音の確認"],
+    effects: ["呼吸音を両側で確認する", "Primary Surveyを構成する"],
+    stateDelta: { shock: -1 }
   },
   abdominalExam: {
     grade: "best",
@@ -411,6 +423,7 @@ export const traumaShockCase: GameCase = {
       subcutaneousEmphysemaCheck: "皮下気腫は触れない。",
       trachealDeviationCheck: "気管偏位は認めない。",
       chestPalpation: "前胸部に明らかな不安定性はない。",
+      chestAuscultation: "両側の呼吸音は清明。心音は正常で雑音なし。",
       abdominalExam: "腹部は膨満し、圧痛を認める。",
       radialPulseCheck: "橈骨動脈は微弱に触知する。",
       consciousnessCheck: "呼びかけで開眼し、受け答えはやや緩慢。",

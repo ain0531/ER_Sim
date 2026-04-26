@@ -1,7 +1,9 @@
-import { Activity, ChevronDown, Clock, Droplets, HeartPulse, Play, RotateCcw, ShieldAlert, Stethoscope } from "lucide-react";
+import { Activity, ChevronDown, Clock, Droplets, HeartPulse, Menu, Play, ShieldAlert, Square, Stethoscope, Thermometer, Volume2, VolumeX, Wind } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { gameCases } from "./game/cases";
 import { EcgWaveform } from "./game/EcgWaveform";
+import { buildQuizQuestion, hasQuiz } from "./game/quizCatalog";
+import type { QuizQuestion } from "./game/quizCatalog";
 import { commandCategories } from "./game/traumaShockCase";
 import {
   applyCommand,
@@ -80,8 +82,17 @@ const commandDisplayOrder = {
 
 type PopupState = {
   message: string;
+  details?: string[];
   imageSrc?: string;
   imageAlt?: string;
+};
+
+type QuizPopupState = {
+  pendingCommand: Command;
+  question: QuizQuestion;
+  selectedIndex: number | null;
+  phase: "question" | "result";
+  isCorrectAnswer: boolean;
 };
 
 function getAssetUrl(path: string) {
@@ -164,6 +175,8 @@ export function App() {
   const [hasRosc, setHasRosc] = useState(false);
   const [selectedMonitorRhythm, setSelectedMonitorRhythm] = useState<GameCase["metadata"]["monitorRhythm"] | "bradycardia">(initialMonitorRhythm);
   const [hasDetectableBloodPressure, setHasDetectableBloodPressure] = useState(!activeCase.id.startsWith("cardiac-arrest-"));
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [quizPopupState, setQuizPopupState] = useState<QuizPopupState | null>(null);
   const [rhythmRecoveryTarget, setRhythmRecoveryTarget] = useState(() => Math.floor(Math.random() * 5) + 1);
   const [rhythmRecoveryAttempts, setRhythmRecoveryAttempts] = useState(0);
   const logListRef = useRef<HTMLDivElement | null>(null);
@@ -270,6 +283,9 @@ export function App() {
   const radialPulseAbsent = !hasDetectableBloodPressure;
   const bpDisplay = hasBpCuff ? (hasDetectableBloodPressure ? `${patient.bpSys}/${patient.bpDia}` : "測定不能") : "--/--";
   const spo2Display = hasSpo2Monitor ? (hasDetectableBloodPressure ? `${patient.spo2}%` : "測定不能") : "--%";
+  const hasRrObservation = isCommandComplete("rrObservation", patient, completionTimes);
+  const rr = Math.min(44, Math.max(8, Math.round(10 + (100 - patient.breathing) * 0.28)));
+  const rrDisplay = hasRrObservation ? `${rr}` : "--";
   const monitorRhythmHint = selectedMonitorRhythm;
   const hasFastPositiveFinding = isCommandComplete("fast", patient, completionTimes) && Boolean(inspectionFindings.fast);
   const diagnosisCandidateVisible =
@@ -346,6 +362,10 @@ export function App() {
 
     const hasShockVitals = hasCirculationAssessment && patient.hr >= 120 && patient.bpSys <= 90;
     const hasFastPositive = isCommandComplete("fast", patient, completionTimes);
+    const hasTrachealDeviation = isCommandComplete("trachealDeviationCheck", patient, completionTimes);
+    const hasNeckVeinDistension = isCommandComplete("neckVeinCheck", patient, completionTimes);
+    const hasHypotension = hasBpCuff && patient.bpSys <= 90;
+    const hasTensionPneumothoraxTriad = hasTrachealDeviation && hasNeckVeinDistension && hasHypotension;
     const alerts = [
       { id: "shockVitals", active: hasShockVitals, popup: { message: "ショック状態です！" } },
       {
@@ -361,6 +381,18 @@ export function App() {
         id: "hemorrhagicShock",
         active: hasShockVitals && hasFastPositive,
         popup: { message: "腹腔内出血によるショックが疑われます！" }
+      },
+      {
+        id: "tensionPneumothorax",
+        active: hasTensionPneumothoraxTriad,
+        popup: {
+          message: "緊張性気胸の疑いがあります！",
+          details: [
+            "気管偏位",
+            "頸静脈怒張",
+            "低血圧（収縮期血圧 90 mmHg以下）"
+          ]
+        }
       }
     ];
 
@@ -369,7 +401,13 @@ export function App() {
       setPopupState(nextAlert.popup);
       setSeenAlerts((current) => ({ ...current, [nextAlert.id]: true }));
     }
-  }, [completionTimes, hasCirculationAssessment, patient.bpSys, patient.hr, popupState, seenAlerts, status]);
+  }, [completionTimes, hasBpCuff, hasCirculationAssessment, patient.bpSys, patient.hr, popupState, seenAlerts, status]);
+
+  useEffect(() => {
+    if (quizPopupState && status !== "running") {
+      setQuizPopupState(null);
+    }
+  }, [quizPopupState, status]);
 
   useEffect(() => {
     if (popupState || !hasRosc || seenAlerts.rosc) {
@@ -507,19 +545,10 @@ export function App() {
     resetCase(nextCase, Math.random() < 0.5 ? "male" : "female");
   }
 
-  function execute(command: Command) {
-    if (status !== "running" || popupState) {
-      return;
-    }
-
-    const lockedUntil = categoryLocks[command.category] ?? 0;
-    const blockReason = getCommandBlockReason(command, patient, completionTimes, winCondition, diagnosisMet);
-    if ((command.blocksCategory !== false && lockedUntil > patient.elapsed) || blockReason) {
-      return;
-    }
-
+  function runCommand(command: Command, immediate = false) {
     setPatient((current) => {
-      const nextCompletionTimes = { ...completionTimes, [command.id]: current.elapsed + command.duration };
+      const completionTime = immediate ? current.elapsed : current.elapsed + command.duration;
+      const nextCompletionTimes = { ...completionTimes, [command.id]: completionTime };
       let next = applyCommand(current, command, completionTimes, diagnosisMet);
       const nextDiagnosisMet = diagnosisMet || isDiagnosisMet(next, nextCompletionTimes, winCondition);
       if (nextDiagnosisMet && !diagnosisMet) {
@@ -565,7 +594,7 @@ export function App() {
       const nextOutcome = achievedRosc ? "won" : getOutcome(next, nextCompletionTimes, winCondition, lossCondition, nextDiagnosisMet);
       setStatus(nextOutcome);
       if (command.blocksCategory !== false) {
-        setCategoryLocks((currentLocks) => ({ ...currentLocks, [command.category]: current.elapsed + command.duration }));
+        setCategoryLocks((currentLocks) => ({ ...currentLocks, [command.category]: completionTime }));
       }
       setCompletionTimes(nextCompletionTimes);
       const effectiveEffects = dedupeMessages(
@@ -582,6 +611,50 @@ export function App() {
       ]);
       return next;
     });
+  }
+
+  function execute(command: Command) {
+    if (status !== "running" || popupState) {
+      return;
+    }
+
+    const lockedUntil = categoryLocks[command.category] ?? 0;
+    const blockReason = getCommandBlockReason(command, patient, completionTimes, winCondition, diagnosisMet);
+    if ((command.blocksCategory !== false && lockedUntil > patient.elapsed) || blockReason) {
+      return;
+    }
+
+    if (hasQuiz(command.id) && !quizPopupState) {
+      const question = buildQuizQuestion(command.id);
+      if (question) {
+        setQuizPopupState({ pendingCommand: command, question, selectedIndex: null, phase: "question", isCorrectAnswer: false });
+        return;
+      }
+    }
+
+    runCommand(command);
+  }
+
+  function submitQuizAnswer() {
+    if (!quizPopupState || quizPopupState.selectedIndex === null) return;
+    const isCorrectAnswer = quizPopupState.selectedIndex === quizPopupState.question.targetIndex;
+    setQuizPopupState((prev) => prev ? { ...prev, phase: "result", isCorrectAnswer } : null);
+  }
+
+  function advanceQuiz() {
+    if (!quizPopupState) return;
+    if (quizPopupState.isCorrectAnswer) {
+      const cmd = quizPopupState.pendingCommand;
+      setQuizPopupState(null);
+      runCommand(cmd, true);
+    } else {
+      const nextQuestion = buildQuizQuestion(quizPopupState.pendingCommand.id);
+      if (!nextQuestion || status !== "running") {
+        setQuizPopupState(null);
+        return;
+      }
+      setQuizPopupState((prev) => prev ? { ...prev, question: nextQuestion, selectedIndex: null, phase: "question", isCorrectAnswer: false } : null);
+    }
   }
 
   async function toggleSound() {
@@ -604,32 +677,102 @@ export function App() {
           <div className="popup-card">
             {popupState.imageSrc ? <img className="popup-image" src={popupState.imageSrc} alt={popupState.imageAlt ?? ""} /> : null}
             <p>{popupState.message}</p>
+            {popupState.details ? (
+              <ul className="popup-details">
+                {popupState.details.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            ) : null}
             <button className="primary-action" onClick={() => setPopupState(null)}>
               OK
             </button>
           </div>
         </div>
       ) : null}
+
+      {quizPopupState ? (
+        <div className="quiz-backdrop" role="dialog" aria-modal="true" aria-label="手技確認クイズ">
+          <div className="quiz-card">
+            <p className="quiz-command-label">{quizPopupState.pendingCommand.label}</p>
+            {quizPopupState.phase === "question" ? (
+              <>
+                <p className="quiz-prompt">{quizPopupState.question.prompt}</p>
+                <div className="quiz-choices">
+                  {quizPopupState.question.choices.map((choice, index) => (
+                    <label key={index} className={`quiz-choice ${quizPopupState.selectedIndex === index ? "quiz-choice-selected" : ""}`}>
+                      <input
+                        type="radio"
+                        name="quiz"
+                        checked={quizPopupState.selectedIndex === index}
+                        onChange={() => setQuizPopupState((prev) => prev ? { ...prev, selectedIndex: index } : null)}
+                      />
+                      <span>{choice.statement}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="quiz-actions">
+                  <button className="quiz-cancel" onClick={() => setQuizPopupState(null)}>キャンセル</button>
+                  <button className="primary-action" disabled={quizPopupState.selectedIndex === null} onClick={submitQuizAnswer}>OK</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className={`quiz-result ${quizPopupState.isCorrectAnswer ? "quiz-result-correct" : "quiz-result-incorrect"}`}>
+                  {quizPopupState.isCorrectAnswer ? "正解" : "不正解"}
+                </p>
+                <p className="quiz-explanation">
+                  {quizPopupState.question.choices[quizPopupState.selectedIndex ?? 0].explanation}
+                </p>
+                <div className="quiz-actions">
+                  <button className="primary-action" onClick={advanceQuiz}>
+                    {quizPopupState.isCorrectAnswer ? "手技を完遂する" : "次の問題へ"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+
       <section className="case-bar">
-        <div>
+        <div className="case-bar-title">
           <p className="eyebrow">{activeCase.metadata.locationLabel}</p>
           <h1>{activeCase.metadata.title}</h1>
         </div>
-        <label className="case-select">
-          <span>症例</span>
-          <select value={activeCase.id} onChange={(event) => selectCase(event.target.value)}>
-            {gameCases.map((gameCase) => (
-              <option key={gameCase.id} value={gameCase.id}>
-                {gameCase.metadata.title}
-              </option>
-            ))}
-          </select>
-        </label>
+        <button
+          className={`icon-action ${status !== "ready" ? "stop-active" : ""}`}
+          onClick={status === "ready" ? () => void start() : reset}
+          title={status === "ready" ? "開始" : "リセット"}
+          aria-label={status === "ready" ? "開始" : "リセット"}
+        >
+          {status === "ready" ? <Play size={18} /> : <Square size={18} />}
+        </button>
         <div className={`status-pill status-${status}`}>
           {status === "ready" && "待機中"}
           {status === "running" && "対応中"}
           {status === "won" && "救命成功"}
           {status === "lost" && "対応失敗"}
+        </div>
+        <button className={`icon-action ${soundEnabled ? "sound-on" : ""}`} onClick={() => void toggleSound()} type="button" aria-label={soundEnabled ? "サウンドON" : "サウンドOFF"} title={soundEnabled ? "サウンドON" : "サウンドOFF"}>
+          {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+        </button>
+        <div className="hamburger-menu">
+          <button className="hamburger-button" onClick={() => setMenuOpen((prev) => !prev)} aria-label="メニュー">
+            <Menu size={20} />
+          </button>
+          {menuOpen && (
+            <div className="hamburger-panel">
+              <label className="case-select">
+                <span>症例</span>
+                <select value={activeCase.id} onChange={(event) => { selectCase(event.target.value); setMenuOpen(false); }}>
+                  {gameCases.map((gameCase) => (
+                    <option key={gameCase.id} value={gameCase.id}>
+                      {gameCase.metadata.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
         </div>
       </section>
 
@@ -755,12 +898,12 @@ export function App() {
 
           <div className="vitals">
             <div className="vital heart">
-              <HeartPulse size={22} />
+              <Activity size={22} />
               <span>HR</span>
               <strong>{hasEcgMonitor ? patient.hr : "--"}</strong>
             </div>
             <div className="vital pressure">
-              <Activity size={22} />
+              <HeartPulse size={22} />
               <span>BP</span>
               <strong>{bpDisplay}</strong>
             </div>
@@ -769,10 +912,23 @@ export function App() {
               <span>SpO2</span>
               <strong>{spo2Display}</strong>
             </div>
+            <div className="vital rr">
+              <Wind size={22} />
+              <span>RR</span>
+              <strong>{rrDisplay}</strong>
+            </div>
+          </div>
+
+          <div className="gcs-row">
             <div className="vital temp">
-              <Stethoscope size={22} />
+              <Thermometer size={22} />
               <span>Temp</span>
               <strong>{hasTemperatureMeasurement ? patient.temp : "--"}</strong>
+            </div>
+            <div className="vital">
+              <Stethoscope size={22} />
+              <span>GCS</span>
+              <strong>{hasConsciousnessCheck ? patient.gcs : "--"}</strong>
             </div>
           </div>
 
@@ -781,12 +937,6 @@ export function App() {
             <Meter label="出血量" value={diagnosisMet ? patient.bleeding : null} dangerHigh />
             <Meter label="酸素化" value={hasSpo2Monitor ? patient.oxygenation : null} dangerLow />
             <Meter label="ショック" value={hasCirculationAssessment ? patient.shock : null} dangerHigh />
-          </div>
-
-          <div className="gcs-row">
-            <span>GCS</span>
-            <strong>{hasConsciousnessCheck ? patient.gcs : "--"}</strong>
-            <span>経過 {formatTime(patient.elapsed)}</span>
           </div>
 
           {outcome !== "running" && status !== "ready" ? (
@@ -812,7 +962,10 @@ export function App() {
           </div>
 
           <div className="log-panel">
-            <h2>処置ログ</h2>
+            <div className="log-header">
+              <h2>処置ログ</h2>
+              <span>経過 {formatTime(patient.elapsed)}</span>
+            </div>
             <div className="log-list" ref={logListRef}>
               {log.map((entry, index) => (
                 <p className={`log-${entry.tone}`} key={`${entry.time}-${index}`}>
@@ -825,18 +978,6 @@ export function App() {
         </section>
 
         <aside className="command-panel">
-          <div className="action-row">
-            <button className="primary-action" onClick={start} disabled={status !== "ready"}>
-              <Play size={18} />
-              開始
-            </button>
-            <button className={`sound-action ${soundEnabled ? "sound-on" : ""}`} onClick={() => void toggleSound()} type="button">
-              {soundEnabled ? "サウンドON" : "サウンドOFF"}
-            </button>
-            <button className="icon-action" onClick={reset} title="リセット" aria-label="リセット">
-              <RotateCcw size={18} />
-            </button>
-          </div>
 
           <div className="category-actions">
             <button onClick={() => setOpenCategories(commandCategories.map((category) => category.id))}>すべてを表示</button>

@@ -30,6 +30,12 @@ export const tensionPneumothoraxCommandProfiles: Record<CommandId, CaseCommandPr
     effects: ["気道評価を進める"],
     stateDelta: { shock: -1 }
   },
+  rrObservation: {
+    grade: "best",
+    requiredConditions: ["B評価", "呼吸数の観察"],
+    effects: ["頻呼吸を確認し呼吸窮迫を評価する"],
+    stateDelta: { shock: -2 }
+  },
   neckVeinCheck: {
     grade: "best",
     requiredConditions: ["B評価", "頸静脈所見の確認"],
@@ -53,6 +59,12 @@ export const tensionPneumothoraxCommandProfiles: Record<CommandId, CaseCommandPr
     requiredConditions: ["B評価", "前胸部触診"],
     effects: ["胸部所見を確認"],
     stateDelta: { shock: -1 }
+  },
+  chestAuscultation: {
+    grade: "best",
+    requiredConditions: ["C評価", "呼吸音の確認"],
+    effects: ["患側の呼吸音消失を確認する", "緊張性気胸の重要な身体所見"],
+    stateDelta: { shock: -3 }
   },
   abdominalExam: {
     grade: "ineffective",
@@ -253,6 +265,7 @@ export const tensionPneumothoraxCase: GameCase = {
       subcutaneousEmphysemaCheck: "右前胸部から頸部に皮下気腫を触れる。",
       trachealDeviationCheck: "気管は左偏位している。",
       chestPalpation: "右前胸部に圧痛と握雪感を認める。",
+      chestAuscultation: "右肺の呼吸音は著明に減弱・消失。左肺は清明。心音は左方偏位し減弱している。",
       abdominalExam: "腹部に明らかな膨満や圧痛はない。",
       radialPulseCheck: "橈骨動脈は微弱である。",
       consciousnessCheck: "不穏だが呼名に応答する。",

@@ -1,9 +1,11 @@
 export type CommandId =
   | "airwayCheck"
+  | "rrObservation"
   | "neckVeinCheck"
   | "subcutaneousEmphysemaCheck"
   | "trachealDeviationCheck"
   | "chestPalpation"
+  | "chestAuscultation"
   | "abdominalExam"
   | "radialPulseCheck"
   | "consciousnessCheck"

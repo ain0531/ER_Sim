@@ -13,7 +13,7 @@ function createDefaultArrestProfiles(): Record<CommandId, CaseCommandProfile> {
       stateDelta: { shock: 1 }
     };
 
-    if (["ecgMonitor", "bpCuff", "spo2Monitor", "consciousnessCheck"].includes(command.id)) {
+    if (["ecgMonitor", "bpCuff", "spo2Monitor", "consciousnessCheck", "rrObservation", "chestAuscultation"].includes(command.id)) {
       profile = {
         grade: "acceptable",
         requiredConditions: ["初期評価", "モニタリング"],
@@ -201,6 +201,7 @@ export const ventricularFibrillationCase = createArrestCase({
   },
   inspectionFindings: {
     ecgMonitor: "心電図で心室細動を認める。",
+    chestAuscultation: "自発呼吸がなく呼吸音を確認できない。心音は聴取できない。",
     consciousnessCheck: "反応はなく、GCS E1V1M1。",
     radialPulseCheck: "橈骨動脈は触知しない。"
   },
@@ -267,6 +268,7 @@ export const ventricularTachycardiaCase = createArrestCase({
   },
   inspectionFindings: {
     ecgMonitor: "心電図で幅広い単形性心室頻拍を認める。",
+    chestAuscultation: "自発呼吸がなく呼吸音を確認できない。心音は聴取できない。",
     consciousnessCheck: "反応はなく、GCS E1V1M1。",
     radialPulseCheck: "脈拍は触知しない。"
   },
@@ -333,6 +335,7 @@ export const asystoleCase = createArrestCase({
   },
   inspectionFindings: {
     ecgMonitor: "心電図で心静止を認める。",
+    chestAuscultation: "自発呼吸がなく呼吸音を確認できない。心音は聴取できない。",
     consciousnessCheck: "反応はなく、GCS E1V1M1。",
     radialPulseCheck: "脈拍は触知しない。"
   },
@@ -399,6 +402,7 @@ export const peaCase = createArrestCase({
   },
   inspectionFindings: {
     ecgMonitor: "電気活動はあるが、脈拍触知を伴わない。",
+    chestAuscultation: "自発呼吸がなく呼吸音を確認できない。心音は聴取できない。",
     bpCuff: "血圧は測定不能である。",
     consciousnessCheck: "反応はなく、GCS E1V1M1。",
     radialPulseCheck: "橈骨動脈は触知しない。"
