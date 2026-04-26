@@ -166,7 +166,18 @@ export const winCondition: WinCondition = {
   requiredCommands: ["oxygen", "thoracentesis", "chestTube"],
   stabilization: {
     minBpSys: 75,
-    maxShock: 70
+    maxShock: 70,
+    primarySurveyCommands: [
+      "airwayCheck",
+      "neckVeinCheck",
+      "subcutaneousEmphysemaCheck",
+      "trachealDeviationCheck",
+      "chestPalpation",
+      "abdominalExam",
+      "radialPulseCheck",
+      "consciousnessCheck",
+      "chestXray"
+    ]
   }
 };
 
@@ -193,6 +204,7 @@ export const tensionPneumothoraxCase: GameCase = {
     title: "緊張性気胸",
     locationLabel: "Trauma Bay 02",
     category: "外傷",
+    tags: ["外傷"],
     difficulty: "標準",
     summary: "胸部外傷後の緊張性気胸に対して、低酸素と閉塞性ショックを迅速に解除する。",
     emsBriefs: {

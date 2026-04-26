@@ -112,9 +112,10 @@ export function App() {
   const completedRequirements = requiredCommands.filter((id) => isCommandComplete(id, patient, completionTimes)).length;
   const bpStable = patient.bpSys >= winCondition.stabilization.minBpSys;
   const shockStable = patient.shock < winCondition.stabilization.maxShock;
+  const requiresPrimarySurvey = activeCase.metadata.tags?.includes("外傷") ?? false;
   const primarySurveyCommands = winCondition.stabilization.primarySurveyCommands ?? [];
   const primarySurveyDone =
-    primarySurveyCommands.length === 0 || primarySurveyCommands.every((id) => isCommandComplete(id, patient, completionTimes));
+    !requiresPrimarySurvey || primarySurveyCommands.length === 0 || primarySurveyCommands.every((id) => isCommandComplete(id, patient, completionTimes));
   const hasSpo2Monitor = isCommandComplete("spo2Monitor", patient, completionTimes);
   const hasBpCuff = isCommandComplete("bpCuff", patient, completionTimes);
   const hasEcgMonitor = isCommandComplete("ecgMonitor", patient, completionTimes);
@@ -133,7 +134,7 @@ export function App() {
   );
   const faceCell = status === "won" && bpStable && shockStable && primarySurveyDone ? getFaceCell(initialPatient, "ready") : getFaceCell(patient, status);
   const faceImageUrl = `/images/${gender === "female" ? "patient_woman_face" : "patient_man_face"}.png`;
-  const stabilizationChecks = [bpStable, shockStable, ...(primarySurveyCommands.length > 0 ? [primarySurveyDone] : [])];
+  const stabilizationChecks = [bpStable, shockStable, ...(requiresPrimarySurvey && primarySurveyCommands.length > 0 ? [primarySurveyDone] : [])];
   const stabilizationRate = stabilizationChecks.filter(Boolean).length / stabilizationChecks.length;
   const actionLogs = log.filter((entry) => entry.kind === "action");
   const commandQualityRaw = actionLogs.reduce((total, entry) => {
@@ -403,7 +404,7 @@ export function App() {
             <p className={shockStable ? "done" : ""}>
               {shockStable ? "達成" : "未達成"}: ショック {winCondition.stabilization.maxShock}未満
             </p>
-            {primarySurveyCommands.length > 0 ? (
+            {requiresPrimarySurvey && primarySurveyCommands.length > 0 ? (
               <p className={primarySurveyDone ? "done" : ""}>
                 {primarySurveyDone ? "達成" : "未達成"}: Primary Survey
               </p>
@@ -590,7 +591,7 @@ export function App() {
                   <p>
                     必須処置 {completedRequirements}/{requiredCommands.length} / SBP {winCondition.stabilization.minBpSys}以上 /
                     shock {winCondition.stabilization.maxShock}未満
-                    {primarySurveyCommands.length > 0 ? " / Primary Survey" : ""}
+                    {requiresPrimarySurvey && primarySurveyCommands.length > 0 ? " / Primary Survey" : ""}
                   </p>
                 </div>
                 <div className="debug-section">

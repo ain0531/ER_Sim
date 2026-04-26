@@ -148,6 +148,7 @@ export type GameCase = {
     title: string;
     locationLabel: string;
     category: string;
+    tags?: string[];
     difficulty: string;
     summary: string;
     emsBriefs: { male: string; female: string };

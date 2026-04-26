@@ -362,6 +362,7 @@ export const traumaShockCase: GameCase = {
     title: "外傷性出血性ショック",
     locationLabel: "Trauma Bay 01",
     category: "外傷",
+    tags: ["外傷"],
     difficulty: "標準",
     summary: "交通外傷後の出血性ショックに対して、初期評価、循環確保、出血制御への接続を行う。",
     emsBriefs: {
