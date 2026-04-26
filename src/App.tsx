@@ -101,8 +101,14 @@ type PendingDefibrillation = {
   willSucceed: boolean;
 };
 
+type AppMode = "learning" | "clinical";
+
 function getAssetUrl(path: string) {
   return `${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
+}
+
+function pickRandomCase() {
+  return gameCases[Math.floor(Math.random() * gameCases.length)];
 }
 
 function clampTone(value: number, min: number, max: number) {
@@ -160,6 +166,7 @@ function playToggleBeep(context: AudioContext) {
 
 export function App() {
   const [activeCase, setActiveCase] = useState<GameCase>(gameCases[0]);
+  const [mode, setMode] = useState<AppMode>("learning");
   const { commands, initialPatient, lossCondition, progression, winCondition } = activeCase;
   const initialMonitorRhythm =
     activeCase.metadata.monitorRhythms?.[Math.floor(Math.random() * activeCase.metadata.monitorRhythms.length)] ?? activeCase.metadata.monitorRhythm;
@@ -319,6 +326,7 @@ export function App() {
   const rrDisplay = hasRrObservation ? `${rr}` : "--";
   const monitorRhythmHint = selectedMonitorRhythm;
   const monitorHr = monitorRhythmHint === "vt" ? 200 : patient.hr;
+  const maskedCaseTitle = requiresPrimarySurvey ? "外傷救急症例" : "内科救急症例";
   const hasFastPositiveFinding = isCommandComplete("fast", patient, completionTimes) && Boolean(inspectionFindings.fast);
   const hasJvdFinding = isCommandComplete("neckVeinCheck", patient, completionTimes) &&
     Boolean(inspectionFindings.neckVeinCheck) &&
@@ -552,7 +560,9 @@ export function App() {
   }
 
   function reset() {
-    resetCase(activeCase, Math.random() < 0.5 ? "male" : "female");
+    const nextCase = mode === "clinical" ? pickRandomCase() : activeCase;
+    setActiveCase(nextCase);
+    resetCase(nextCase, Math.random() < 0.5 ? "male" : "female");
   }
 
   function resetCase(nextCase: GameCase, nextGender: "male" | "female") {
@@ -584,6 +594,14 @@ export function App() {
 
     setActiveCase(nextCase);
     resetCase(nextCase, Math.random() < 0.5 ? "male" : "female");
+  }
+
+  function changeMode(nextMode: AppMode) {
+    setMode(nextMode);
+    const nextCase = nextMode === "clinical" ? pickRandomCase() : activeCase;
+    setActiveCase(nextCase);
+    resetCase(nextCase, Math.random() < 0.5 ? "male" : "female");
+    setMenuOpen(false);
   }
 
   function runCommand(command: Command, immediate = false) {
@@ -755,7 +773,7 @@ export function App() {
       <section className="case-bar">
         <div className="case-bar-title">
           <p className="eyebrow">{activeCase.metadata.locationLabel}</p>
-          <h1>{activeCase.metadata.title}</h1>
+          <h1>{mode === "clinical" ? maskedCaseTitle : activeCase.metadata.title}</h1>
         </div>
         <button
           className={`icon-action ${status !== "ready" ? "stop-active" : ""}`}
@@ -781,15 +799,24 @@ export function App() {
           {menuOpen && (
             <div className="hamburger-panel">
               <label className="case-select">
-                <span>症例</span>
-                <select value={activeCase.id} onChange={(event) => { selectCase(event.target.value); setMenuOpen(false); }}>
-                  {gameCases.map((gameCase) => (
-                    <option key={gameCase.id} value={gameCase.id}>
-                      {gameCase.metadata.title}
-                    </option>
-                  ))}
+                <span>モード変更</span>
+                <select value={mode} onChange={(event) => changeMode(event.target.value as AppMode)}>
+                  <option value="learning">学習モード</option>
+                  <option value="clinical">臨床モード</option>
                 </select>
               </label>
+              {mode === "learning" ? (
+                <label className="case-select">
+                  <span>症例</span>
+                  <select value={activeCase.id} onChange={(event) => { selectCase(event.target.value); setMenuOpen(false); }}>
+                    {gameCases.map((gameCase) => (
+                      <option key={gameCase.id} value={gameCase.id}>
+                        {gameCase.metadata.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
             </div>
           )}
         </div>
@@ -855,7 +882,7 @@ export function App() {
               const done = isRequiredCommandSatisfied(id, patient, completionTimes);
               return (
                 <p className={done ? "done" : ""} key={id}>
-                  {done ? "達成" : "未達成"}: {command.label}
+                  {done ? "達成" : "未達成"}{mode === "clinical" ? "" : `: ${command.label}`}
                 </p>
               );
             })}
@@ -863,7 +890,7 @@ export function App() {
               <>
                 <div className="objective-group-title">大量出血</div>
                 <p className={diagnosisMet ? "done" : ""}>
-                  {diagnosisMet ? "診断済み" : "未診断"}: 頻脈＋低血圧＋FAST陽性
+                  {diagnosisMet ? "診断済み" : "未診断"}{mode === "clinical" ? "" : ": 頻脈＋低血圧＋FAST陽性"}
                 </p>
                 {diagnosisMet ? (
                   <>
@@ -873,7 +900,7 @@ export function App() {
                       const done = isRequiredCommandSatisfied(id, patient, completionTimes);
                       return (
                         <p className={done ? "done" : ""} key={id}>
-                          {done ? "達成" : "未達成"}: {command.label}
+                          {done ? "達成" : "未達成"}{mode === "clinical" ? "" : `: ${command.label}`}
                         </p>
                       );
                     })}
@@ -883,14 +910,14 @@ export function App() {
             ) : null}
             <div className="objective-group-title">安定化条件</div>
             <p className={bpStable ? "done" : ""}>
-              {bpStable ? "達成" : "未達成"}: SBP {winCondition.stabilization.minBpSys}以上
+              {bpStable ? "達成" : "未達成"}{mode === "clinical" ? "" : `: SBP ${winCondition.stabilization.minBpSys}以上`}
             </p>
             <p className={shockStable ? "done" : ""}>
-              {shockStable ? "達成" : "未達成"}: ショック {winCondition.stabilization.maxShock}未満
+              {shockStable ? "達成" : "未達成"}{mode === "clinical" ? "" : `: ショック ${winCondition.stabilization.maxShock}未満`}
             </p>
             {requiresPrimarySurvey && primarySurveyCommands.length > 0 ? (
               <p className={primarySurveyDone ? "done" : ""}>
-                {primarySurveyDone ? "達成" : "未達成"}: Primary Survey
+                {primarySurveyDone ? "達成" : "未達成"}{mode === "clinical" ? "" : ": Primary Survey"}
               </p>
             ) : null}
           </div>
