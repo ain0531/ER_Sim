@@ -228,9 +228,10 @@ export function App() {
   const hasRadialPulseCheck = isCommandComplete("radialPulseCheck", patient, completionTimes);
   const hasCirculationAssessment = hasBpCuff && hasEcgMonitor;
   const inspectionFindings = activeCase.metadata.inspectionFindings ?? {};
+  const isCardiacArrestCase = activeCase.id.startsWith("cardiac-arrest-");
   const radialPulseAbsent =
-    hasRadialPulseCheck &&
-    Boolean(inspectionFindings.radialPulseCheck?.includes("触知しない"));
+    isCardiacArrestCase ||
+    (hasRadialPulseCheck && Boolean(inspectionFindings.radialPulseCheck?.includes("触知しない")));
   const bpDisplay = hasBpCuff ? (radialPulseAbsent ? "測定不能" : `${patient.bpSys}/${patient.bpDia}`) : "--/--";
   const spo2Display = hasSpo2Monitor ? (radialPulseAbsent ? "測定不能" : `${patient.spo2}%`) : "--%";
   const monitorRhythmHint = selectedMonitorRhythm;
