@@ -49,6 +49,10 @@ type PopupState = {
   imageAlt?: string;
 };
 
+function getAssetUrl(path: string) {
+  return `${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
+}
+
 export function App() {
   const [activeCase, setActiveCase] = useState<GameCase>(gameCases[0]);
   const { commands, initialPatient, lossCondition, progression, winCondition } = activeCase;
@@ -133,7 +137,7 @@ export function App() {
     isCommandComplete(id as Command["id"], patient, completionTimes)
   );
   const faceCell = status === "won" && bpStable && shockStable && primarySurveyDone ? getFaceCell(initialPatient, "ready") : getFaceCell(patient, status);
-  const faceImageUrl = `/images/${gender === "female" ? "patient_woman_face" : "patient_man_face"}.png`;
+  const faceImageUrl = getAssetUrl(`images/${gender === "female" ? "patient_woman_face" : "patient_man_face"}.png`);
   const stabilizationChecks = [bpStable, shockStable, ...(requiresPrimarySurvey && primarySurveyCommands.length > 0 ? [primarySurveyDone] : [])];
   const stabilizationRate = stabilizationChecks.filter(Boolean).length / stabilizationChecks.length;
   const actionLogs = log.filter((entry) => entry.kind === "action");
@@ -168,7 +172,7 @@ export function App() {
         active: hasFastPositive,
         popup: {
           message: "腹腔内に体液貯留があります！",
-          imageSrc: "/images/FAST_abdominal1.jpg",
+          imageSrc: getAssetUrl("images/FAST_abdominal1.jpg"),
           imageAlt: "FAST腹部所見"
         }
       },
@@ -320,8 +324,8 @@ export function App() {
           </div>
 
           <div className="patient-scene" aria-label="患者表示">
-            <img className="patient-body-image" src="/images/wholeBody.png" alt="患者全身像" />
-            {hasFastPositiveFinding ? <img className="patient-fast-image" src="/images/FAST_abdominal1.jpg" alt="FAST腹部所見" /> : null}
+            <img className="patient-body-image" src={getAssetUrl("images/wholeBody.png")} alt="患者全身像" />
+            {hasFastPositiveFinding ? <img className="patient-fast-image" src={getAssetUrl("images/FAST_abdominal1.jpg")} alt="FAST腹部所見" /> : null}
             <div
               className="patient-face"
               aria-label="患者の顔色・表情"
