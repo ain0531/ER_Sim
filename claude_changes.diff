@@ -1,0 +1,170 @@
+diff --git a/src/App.tsx b/src/App.tsx
+index 7c81ce8..a4b989e 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -288,6 +288,9 @@ export function App() {
+   const rrDisplay = hasRrObservation ? `${rr}` : "--";
+   const monitorRhythmHint = selectedMonitorRhythm;
+   const hasFastPositiveFinding = isCommandComplete("fast", patient, completionTimes) && Boolean(inspectionFindings.fast);
++  const hasJvdFinding = isCommandComplete("neckVeinCheck", patient, completionTimes) &&
++    Boolean(inspectionFindings.neckVeinCheck) &&
++    !(inspectionFindings.neckVeinCheck ?? "").includes("明らかでない");
+   const diagnosisCandidateVisible =
+     winCondition.diagnosisRule !== undefined &&
+     isCommandComplete("fast", patient, completionTimes) &&
+@@ -506,7 +509,7 @@ export function App() {
+       await ensureAudioContext();
+     }
+     setStatus("running");
+-    setLog((current) => [...current, { time: 0, message: "シミュレーション開始。出血性ショックとして初期対応を進めます。", tone: "neutral", kind: "system" }]);
++    setLog((current) => [...current, { time: 0, message: "シミュレーション開始。救急患者の初期対応を進めます。", tone: "neutral", kind: "system" }]);
+   }
+ 
+   function reset() {
+@@ -786,6 +789,7 @@ export function App() {
+           <div className="patient-scene" aria-label="患者表示">
+             <img className="patient-body-image" src={getAssetUrl("images/wholeBody.png")} alt="患者全身像" />
+             {hasFastPositiveFinding ? <img className="patient-fast-image" src={getAssetUrl("images/FAST_abdominal1.jpg")} alt="FAST腹部所見" /> : null}
++            {hasJvdFinding ? <img className="patient-jvd-image" src={getAssetUrl("images/juglar vein distention.png")} alt="頸静脈怒張" /> : null}
+             <div
+               className="patient-face"
+               aria-label="患者の顔色・表情"
+diff --git a/src/game/cardiacArrestCases.ts b/src/game/cardiacArrestCases.ts
+index a7d822c..587fa85 100644
+--- a/src/game/cardiacArrestCases.ts
++++ b/src/game/cardiacArrestCases.ts
+@@ -22,6 +22,15 @@ function createDefaultArrestProfiles(): Record<CommandId, CaseCommandProfile> {
+       };
+     }
+ 
++    if (command.id === "chestCompression") {
++      profile = {
++        grade: "best",
++        requiredConditions: ["CPR開始", "心肺停止"],
++        effects: ["心拍出量を維持する", "蘇生の基本処置"],
++        stateDelta: { circulation: 8, oxygenation: 5, shock: -6 }
++      };
++    }
++
+     if (["oxygen", "iv"].includes(command.id)) {
+       profile = {
+         grade: "acceptable",
+diff --git a/src/game/commandCatalog.ts b/src/game/commandCatalog.ts
+index f973a34..f68668c 100644
+--- a/src/game/commandCatalog.ts
++++ b/src/game/commandCatalog.ts
+@@ -27,7 +27,8 @@ export const commandCatalog: BaseCommand[] = [
+   { id: "chestTube", category: "B", displayKind: "procedure", label: "胸腔ドレーン留置", duration: 35 },
+   { id: "chestAuscultation", category: "C", displayKind: "confirm", label: "胸部聴診", duration: 3 },
+   { id: "abdominalExam", category: "C", displayKind: "confirm", label: "腹部の視診・触診", duration: 3 },
+-  { id: "radialPulseCheck", category: "C", displayKind: "confirm", label: "橈骨動脈の触知確認", duration: 1 },
++  { id: "chestCompression", category: "C", displayKind: "procedure", label: "胸骨圧迫の開始", duration: 15, blocksCategory: false },
++  { id: "radialPulseCheck", category: "C", displayKind: "confirm", label: "橈骨・頸動脈の触知確認", duration: 1 },
+   { id: "bpCuff", category: "C", displayKind: "test", label: "血圧計を装着", duration: 5 },
+   { id: "ecgMonitor", category: "C", displayKind: "test", label: "心電図を装着", duration: 5 },
+   { id: "fast", category: "C", displayKind: "test", label: "FAST（超音波検査）", duration: 20 },
+@@ -38,7 +39,7 @@ export const commandCatalog: BaseCommand[] = [
+   { id: "pericardiocentesis", category: "C", displayKind: "procedure", label: "心嚢腔穿刺", duration: 25 },
+   { id: "massiveFluid", category: "C", displayKind: "procedure", label: "大量輸液", duration: 25 },
+   { id: "cardioversion", category: "C", displayKind: "procedure", label: "カルディオバージョン", duration: 10, repeatable: true },
+-  { id: "defibrillation", category: "C", displayKind: "procedure", label: "除細動", duration: 10, repeatable: true },
++  { id: "defibrillation", category: "C", displayKind: "procedure", label: "除細動", duration: 45, blocksCategory: false, repeatable: true },
+   { id: "transfusion", category: "C", displayKind: "procedure", label: "輸血", duration: 60, blocksCategory: false },
+   { id: "ivr", category: "C", displayKind: "procedure", label: "IVR", duration: 45, blocksCategory: false },
+   { id: "surgeryContact", category: "C", displayKind: "procedure", label: "外科医へ連絡", duration: 15 },
+diff --git a/src/game/simulation.ts b/src/game/simulation.ts
+index 23e9102..d7d87a6 100644
+--- a/src/game/simulation.ts
++++ b/src/game/simulation.ts
+@@ -61,7 +61,8 @@ export function isDiagnosisMet(
+   }
+ 
+   const hasRequiredData = diagnosisRule.requiresCompleted.every((id) => isCommandComplete(id, state, completionTimes));
+-  const hasShockVital = state.bpSys <= diagnosisRule.shockVital.maxBpSys && state.hr >= diagnosisRule.shockVital.minHr;
++  const hasShockVital = !diagnosisRule.shockVital ||
++    (state.bpSys <= diagnosisRule.shockVital.maxBpSys && state.hr >= diagnosisRule.shockVital.minHr);
+   return hasRequiredData && hasShockVital;
+ }
+ 
+@@ -178,8 +179,7 @@ function isConditionalProfileActive(
+     command.conditionalProfile !== undefined &&
+     (command.conditionalProfile.requiresAnyCompleted.length === 0 ||
+       command.conditionalProfile.requiresAnyCompleted.some((id) => isCommandComplete(id, state, completionTimes))) &&
+-    (command.conditionalProfile.requiresDiagnosisId === undefined ||
+-      (command.conditionalProfile.requiresDiagnosisId === "massiveHemorrhage" && diagnosedMassiveHemorrhage))
++    (command.conditionalProfile.requiresDiagnosisId === undefined || diagnosedMassiveHemorrhage)
+   );
+ }
+ 
+diff --git a/src/game/traumaShockCase.ts b/src/game/traumaShockCase.ts
+index 61b7115..3569eae 100644
+--- a/src/game/traumaShockCase.ts
++++ b/src/game/traumaShockCase.ts
+@@ -133,6 +133,12 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
+     effects: ["腹部膨満や圧痛を確認", "Primary Surveyを構成する"],
+     stateDelta: { bleeding: -2, shock: -2 }
+   },
++  chestCompression: {
++    grade: "worst",
++    requiredConditions: ["心停止"],
++    effects: ["心停止でない患者への胸骨圧迫は禁忌", "禁忌として最悪手に分類"],
++    stateDelta: { shock: 70, circulation: -60, oxygenation: -40, consciousness: -30 }
++  },
+   bpCuff: {
+     grade: "acceptable",
+     requiredConditions: ["循環評価が必要"],
+diff --git a/src/game/types.ts b/src/game/types.ts
+index 35361da..b5b80c0 100644
+--- a/src/game/types.ts
++++ b/src/game/types.ts
+@@ -7,6 +7,7 @@ export type CommandId =
+   | "chestPalpation"
+   | "chestAuscultation"
+   | "abdominalExam"
++  | "chestCompression"
+   | "radialPulseCheck"
+   | "consciousnessCheck"
+   | "nasalAirway"
+@@ -100,7 +101,7 @@ export type CaseCommandProfile = {
+   };
+   conditionalProfile?: {
+     requiresAnyCompleted: CommandId[];
+-    requiresDiagnosisId?: "massiveHemorrhage";
++    requiresDiagnosisId?: "massiveHemorrhage" | "ventricularFibrillation";
+     grade: CommandGrade;
+     effects: string[];
+     stateDelta?: Partial<Record<keyof Omit<PatientState, "performed" | "gcs">, number>>;
+@@ -121,8 +122,8 @@ export type CompletionTimes = Partial<Record<CommandId, number>>;
+ export type WinCondition = {
+   requiredCommands: CommandId[];
+   diagnosisRule?: {
+-    id: "massiveHemorrhage";
+-    shockVital: {
++    id: "massiveHemorrhage" | "ventricularFibrillation";
++    shockVital?: {
+       maxBpSys: number;
+       minHr: number;
+     };
+diff --git a/src/styles.css b/src/styles.css
+index 919dab2..d6d07ad 100644
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -370,6 +370,18 @@ h2 {
+   z-index: 1;
+ }
+ 
++.patient-jvd-image {
++  position: absolute;
++  top: 12px;
++  right: 10px;
++  z-index: 1;
++  width: 100px;
++  max-width: 38%;
++  object-fit: contain;
++  border: 1px solid rgba(255, 255, 255, 0.18);
++  background: rgba(11, 17, 14, 0.92);
++}
++
+ .patient-fast-image {
+   position: absolute;
+   top: 50%;

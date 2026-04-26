@@ -7,6 +7,7 @@ export type CommandId =
   | "chestPalpation"
   | "chestAuscultation"
   | "abdominalExam"
+  | "chestCompression"
   | "radialPulseCheck"
   | "consciousnessCheck"
   | "nasalAirway"
@@ -100,7 +101,7 @@ export type CaseCommandProfile = {
   };
   conditionalProfile?: {
     requiresAnyCompleted: CommandId[];
-    requiresDiagnosisId?: "massiveHemorrhage";
+    requiresDiagnosisId?: "massiveHemorrhage" | "ventricularFibrillation";
     grade: CommandGrade;
     effects: string[];
     stateDelta?: Partial<Record<keyof Omit<PatientState, "performed" | "gcs">, number>>;
@@ -117,12 +118,13 @@ export type LogEntry = {
 };
 
 export type CompletionTimes = Partial<Record<CommandId, number>>;
+export type DiagnosisId = "massiveHemorrhage" | "ventricularFibrillation";
 
 export type WinCondition = {
   requiredCommands: CommandId[];
   diagnosisRule?: {
-    id: "massiveHemorrhage";
-    shockVital: {
+    id: DiagnosisId;
+    shockVital?: {
       maxBpSys: number;
       minHr: number;
     };

@@ -133,6 +133,12 @@ export const traumaShockCommandProfiles: Record<CommandId, CaseCommandProfile> =
     effects: ["腹部膨満や圧痛を確認", "Primary Surveyを構成する"],
     stateDelta: { bleeding: -2, shock: -2 }
   },
+  chestCompression: {
+    grade: "worst",
+    requiredConditions: ["心停止"],
+    effects: ["心停止でない患者への胸骨圧迫は禁忌", "禁忌として最悪手に分類"],
+    stateDelta: { shock: 70, circulation: -60, oxygenation: -40, consciousness: -30 }
+  },
   bpCuff: {
     grade: "acceptable",
     requiredConditions: ["循環評価が必要"],

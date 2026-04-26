@@ -15,12 +15,13 @@ import {
   getEffectiveEffects,
   getEffectiveGrade,
   isDiagnosisMet,
+  isRequiredCommandSatisfied,
   getOutcome,
   gradeLabel,
   isCommandComplete,
   progressPatient,
 } from "./game/simulation";
-import type { Command, CommandCategoryId, CompletionTimes, GameCase, GameStatus, LogEntry, PatientState } from "./game/types";
+import type { Command, CommandCategoryId, CompletionTimes, DiagnosisId, GameCase, GameStatus, LogEntry, PatientState } from "./game/types";
 
 function getFaceCell(
   patient: PatientState,
@@ -49,28 +50,28 @@ function getDisplayedGrade(
   command: Command,
   patient: PatientState,
   completionTimes: CompletionTimes,
-  diagnosisMet: boolean,
+  activeDiagnosisId: DiagnosisId | undefined,
   hasRosc: boolean,
   isCardiacArrestCase: boolean
 ) {
   if (hasRosc && isCardiacArrestCase && command.id === "adrenalineIvBolus") {
     return "harmful" as const;
   }
-  return getEffectiveGrade(command, patient, completionTimes, diagnosisMet);
+  return getEffectiveGrade(command, patient, completionTimes, activeDiagnosisId);
 }
 
 function getDisplayedEffects(
   command: Command,
   patient: PatientState,
   completionTimes: CompletionTimes,
-  diagnosisMet: boolean,
+  activeDiagnosisId: DiagnosisId | undefined,
   hasRosc: boolean,
   isCardiacArrestCase: boolean
 ) {
   if (hasRosc && isCardiacArrestCase && command.id === "adrenalineIvBolus") {
     return ["自己心拍再開後のアドレナリン投与で循環を不安定化させる", "悪手として扱う"];
   }
-  return getEffectiveEffects(command, patient, completionTimes, diagnosisMet);
+  return getEffectiveEffects(command, patient, completionTimes, activeDiagnosisId);
 }
 
 const commandDisplayOrder = {
@@ -93,6 +94,11 @@ type QuizPopupState = {
   selectedIndex: number | null;
   phase: "question" | "result";
   isCorrectAnswer: boolean;
+};
+
+type PendingDefibrillation = {
+  resolvesAt: number;
+  willSucceed: boolean;
 };
 
 function getAssetUrl(path: string) {
@@ -177,8 +183,7 @@ export function App() {
   const [hasDetectableBloodPressure, setHasDetectableBloodPressure] = useState(!activeCase.id.startsWith("cardiac-arrest-"));
   const [menuOpen, setMenuOpen] = useState(false);
   const [quizPopupState, setQuizPopupState] = useState<QuizPopupState | null>(null);
-  const [rhythmRecoveryTarget, setRhythmRecoveryTarget] = useState(() => Math.floor(Math.random() * 5) + 1);
-  const [rhythmRecoveryAttempts, setRhythmRecoveryAttempts] = useState(0);
+  const [pendingDefibrillation, setPendingDefibrillation] = useState<PendingDefibrillation | null>(null);
   const logListRef = useRef<HTMLDivElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const beatTimerRef = useRef<number | null>(null);
@@ -227,12 +232,35 @@ export function App() {
 
     const timer = window.setInterval(() => {
       setPatient((current) => {
-        const next = progressPatient(current, completionTimes, winCondition, progression, diagnosedMassiveHemorrhage);
+        let next = progressPatient(current, completionTimes, winCondition, progression, diagnosedMassiveHemorrhage);
+        const nextElapsed = next.elapsed;
+        const defibrillationResolved =
+          pendingDefibrillation !== null &&
+          nextElapsed >= pendingDefibrillation.resolvesAt &&
+          selectedMonitorRhythm !== "sinus";
+        if (defibrillationResolved) {
+          if (pendingDefibrillation.willSucceed) {
+            setSelectedMonitorRhythm("sinus");
+            setHasDetectableBloodPressure(true);
+            setHasRosc(true);
+            next = deriveVitals({
+              ...next,
+              circulation: Math.max(next.circulation, 68),
+              oxygenation: Math.max(next.oxygenation, 56),
+              breathing: Math.max(next.breathing, 52),
+              shock: Math.min(next.shock, 42),
+              consciousness: Math.max(next.consciousness, 48)
+            });
+          }
+          setPendingDefibrillation(null);
+        }
         const nextDiagnosisMet = diagnosedMassiveHemorrhage || isDiagnosisMet(next, completionTimes, winCondition);
         if (nextDiagnosisMet && !diagnosedMassiveHemorrhage) {
           setDiagnosedMassiveHemorrhage(true);
         }
-        const outcome = getOutcome(next, completionTimes, winCondition, lossCondition, nextDiagnosisMet);
+        const outcome = defibrillationResolved && pendingDefibrillation?.willSucceed
+          ? "won"
+          : getOutcome(next, completionTimes, winCondition, lossCondition, nextDiagnosisMet);
         if (outcome !== "running") {
           setStatus(outcome);
         }
@@ -241,7 +269,7 @@ export function App() {
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [completionTimes, diagnosedMassiveHemorrhage, popupState, status]);
+  }, [completionTimes, diagnosedMassiveHemorrhage, pendingDefibrillation, popupState, selectedMonitorRhythm, status]);
 
   useEffect(() => {
     if (!logListRef.current) {
@@ -260,12 +288,13 @@ export function App() {
   const postDiagnosisRequiredCommands = winCondition.diagnosisRule?.additionalRequiredCommands ?? [];
   const computedDiagnosisMet = isDiagnosisMet(patient, completionTimes, winCondition);
   const diagnosisMet = diagnosedMassiveHemorrhage || computedDiagnosisMet;
+  const activeDiagnosisId = diagnosisMet ? winCondition.diagnosisRule?.id : undefined;
   const baseRequiredCommands = getActiveRequiredCommands(patient, completionTimes, winCondition, diagnosisMet);
   const requiredCommands =
     hasRosc && isCardiacArrestCase && !isCommandComplete("adrenalineIvBolus", patient, completionTimes)
       ? baseRequiredCommands.filter((id) => id !== "adrenalineIvBolus")
       : baseRequiredCommands;
-  const completedRequirements = requiredCommands.filter((id) => isCommandComplete(id, patient, completionTimes)).length;
+  const completedRequirements = requiredCommands.filter((id) => isRequiredCommandSatisfied(id, patient, completionTimes)).length;
   const bpStable = hasDetectableBloodPressure && patient.bpSys >= winCondition.stabilization.minBpSys;
   const shockStable = patient.shock < winCondition.stabilization.maxShock;
   const requiresPrimarySurvey = activeCase.metadata.tags?.includes("外傷") ?? false;
@@ -278,6 +307,8 @@ export function App() {
   const hasTemperatureMeasurement = isCommandComplete("temperatureMeasurement", patient, completionTimes);
   const hasConsciousnessCheck = isCommandComplete("consciousnessCheck", patient, completionTimes);
   const hasRadialPulseCheck = isCommandComplete("radialPulseCheck", patient, completionTimes);
+  const hasIntubation = isCommandComplete("intubation", patient, completionTimes);
+  const hasCardiacArrest = isCardiacArrestCase || (hasRadialPulseCheck && !hasDetectableBloodPressure);
   const hasCirculationAssessment = hasBpCuff && hasEcgMonitor;
   const inspectionFindings = activeCase.metadata.inspectionFindings ?? {};
   const radialPulseAbsent = !hasDetectableBloodPressure;
@@ -288,6 +319,9 @@ export function App() {
   const rrDisplay = hasRrObservation ? `${rr}` : "--";
   const monitorRhythmHint = selectedMonitorRhythm;
   const hasFastPositiveFinding = isCommandComplete("fast", patient, completionTimes) && Boolean(inspectionFindings.fast);
+  const hasJvdFinding = isCommandComplete("neckVeinCheck", patient, completionTimes) &&
+    Boolean(inspectionFindings.neckVeinCheck) &&
+    !(inspectionFindings.neckVeinCheck ?? "").includes("明らかでない");
   const diagnosisCandidateVisible =
     winCondition.diagnosisRule !== undefined &&
     isCommandComplete("fast", patient, completionTimes) &&
@@ -297,7 +331,7 @@ export function App() {
     .filter(([id]) => isCommandComplete(id as Command["id"], patient, completionTimes))
     .map(([id, finding]) => {
       if (id === "radialPulseCheck") {
-        return [id, hasDetectableBloodPressure ? "橈骨動脈を触知する。" : "橈骨動脈は触知しない。"] as const;
+        return [id, hasDetectableBloodPressure ? "橈骨動脈・頸動脈を触知する。" : "橈骨動脈・頸動脈とも触知しない。"] as const;
       }
       if (id === "bpCuff") {
         return [id, hasDetectableBloodPressure ? `血圧は ${patient.bpSys}/${patient.bpDia} mmHg。` : "血圧は測定不能である。"] as const;
@@ -308,7 +342,13 @@ export function App() {
       return [id, finding] as const;
     });
   const faceCell = status === "won" && bpStable && shockStable && primarySurveyDone ? getFaceCell(initialPatient, "ready") : getFaceCell(patient, status);
-  const faceImageUrl = getAssetUrl(`images/${gender === "female" ? "patient_woman_face" : "patient_man_face"}.png`);
+  const faceImageUrl = getAssetUrl(
+    `images/${
+      hasIntubation
+        ? (gender === "female" ? "intubated_woman_face" : "intubated_man_face")
+        : (gender === "female" ? "patient_woman_face" : "patient_man_face")
+    }.png`
+  );
   const stabilizationChecks = [bpStable, shockStable, ...(requiresPrimarySurvey && primarySurveyCommands.length > 0 ? [primarySurveyDone] : [])];
   const stabilizationRate = stabilizationChecks.filter(Boolean).length / stabilizationChecks.length;
   const actionLogs = log.filter((entry) => entry.kind === "action");
@@ -360,13 +400,14 @@ export function App() {
       return;
     }
 
-    const hasShockVitals = hasCirculationAssessment && patient.hr >= 120 && patient.bpSys <= 90;
+    const hasShockVitals = !hasCardiacArrest && hasCirculationAssessment && patient.hr >= 120 && patient.bpSys <= 90;
     const hasFastPositive = isCommandComplete("fast", patient, completionTimes);
     const hasTrachealDeviation = isCommandComplete("trachealDeviationCheck", patient, completionTimes);
     const hasNeckVeinDistension = isCommandComplete("neckVeinCheck", patient, completionTimes);
     const hasHypotension = hasBpCuff && patient.bpSys <= 90;
     const hasTensionPneumothoraxTriad = hasTrachealDeviation && hasNeckVeinDistension && hasHypotension;
     const alerts = [
+      { id: "cardiacArrest", active: hasRadialPulseCheck && !hasDetectableBloodPressure, popup: { message: "心停止です！" } },
       { id: "shockVitals", active: hasShockVitals, popup: { message: "ショック状態です！" } },
       {
         id: "fastPositive",
@@ -401,7 +442,7 @@ export function App() {
       setPopupState(nextAlert.popup);
       setSeenAlerts((current) => ({ ...current, [nextAlert.id]: true }));
     }
-  }, [completionTimes, hasBpCuff, hasCirculationAssessment, patient.bpSys, patient.hr, popupState, seenAlerts, status]);
+  }, [completionTimes, hasBpCuff, hasCardiacArrest, hasCirculationAssessment, hasDetectableBloodPressure, hasRadialPulseCheck, patient.bpSys, patient.hr, popupState, seenAlerts, status]);
 
   useEffect(() => {
     if (quizPopupState && status !== "running") {
@@ -506,7 +547,7 @@ export function App() {
       await ensureAudioContext();
     }
     setStatus("running");
-    setLog((current) => [...current, { time: 0, message: "シミュレーション開始。出血性ショックとして初期対応を進めます。", tone: "neutral", kind: "system" }]);
+    setLog((current) => [...current, { time: 0, message: "シミュレーション開始。救急患者の初期対応を進めます。", tone: "neutral", kind: "system" }]);
   }
 
   function reset() {
@@ -526,11 +567,10 @@ export function App() {
     setSeenEndPopup(false);
     setDiagnosedMassiveHemorrhage(false);
     setHasRosc(false);
+    setPendingDefibrillation(null);
     setPopupState(null);
     setSelectedMonitorRhythm(nextMonitorRhythm);
     setHasDetectableBloodPressure(!nextCase.id.startsWith("cardiac-arrest-"));
-    setRhythmRecoveryTarget(Math.floor(Math.random() * 5) + 1);
-    setRhythmRecoveryAttempts(0);
     setLog([{ time: 0, message: nextCase.metadata.initialLogs[nextGender], tone: "neutral", kind: "system" }]);
     stopSoundTimers();
   }
@@ -549,65 +589,40 @@ export function App() {
     setPatient((current) => {
       const completionTime = immediate ? current.elapsed : current.elapsed + command.duration;
       const nextCompletionTimes = { ...completionTimes, [command.id]: completionTime };
-      let next = applyCommand(current, command, completionTimes, diagnosisMet);
+      let next = applyCommand(current, command, completionTimes, activeDiagnosisId);
       const nextDiagnosisMet = diagnosisMet || isDiagnosisMet(next, nextCompletionTimes, winCondition);
       if (nextDiagnosisMet && !diagnosisMet) {
         setDiagnosedMassiveHemorrhage(true);
       }
-      const effectiveGrade = getDisplayedGrade(command, current, completionTimes, diagnosisMet, hasRosc, isCardiacArrestCase);
+      const effectiveGrade = getDisplayedGrade(command, current, completionTimes, activeDiagnosisId, hasRosc, isCardiacArrestCase);
       if (
         isCardiacArrestCase &&
-        (command.id === "defibrillation" || command.id === "cardioversion") &&
+        command.id === "defibrillation" &&
         (selectedMonitorRhythm === "vf" || selectedMonitorRhythm === "vt")
       ) {
-        const nextAttempts = rhythmRecoveryAttempts + 1;
-        setRhythmRecoveryAttempts(nextAttempts);
-        if (nextAttempts >= rhythmRecoveryTarget && effectiveGrade !== "worst") {
-          setSelectedMonitorRhythm("sinus");
-          setHasDetectableBloodPressure(true);
-          setHasRosc(true);
-          next = deriveVitals({
-            ...next,
-            circulation: Math.max(next.circulation, 68),
-            oxygenation: Math.max(next.oxygenation, 56),
-            breathing: Math.max(next.breathing, 52),
-            shock: Math.min(next.shock, 42),
-            consciousness: Math.max(next.consciousness, 48)
-          });
-          setLog((entries) => [
-            ...entries,
-            {
-              time: next.elapsed,
-              message: "自己心拍が再開し、正常洞調律へ復帰した。",
-              tone: "good",
-              kind: "system"
-            }
-          ]);
-        }
+        setPendingDefibrillation({
+          resolvesAt: completionTime,
+          willSucceed: effectiveGrade !== "worst" && Math.random() < 0.3
+        });
       }
-      const achievedRosc =
-        isCardiacArrestCase &&
-        (command.id === "defibrillation" || command.id === "cardioversion") &&
-        selectedMonitorRhythm !== "sinus" &&
-        rhythmRecoveryAttempts + 1 >= rhythmRecoveryTarget &&
-        effectiveGrade !== "worst";
-      const nextOutcome = achievedRosc ? "won" : getOutcome(next, nextCompletionTimes, winCondition, lossCondition, nextDiagnosisMet);
+      const nextOutcome = getOutcome(next, nextCompletionTimes, winCondition, lossCondition, nextDiagnosisMet);
       setStatus(nextOutcome);
       if (command.blocksCategory !== false) {
         setCategoryLocks((currentLocks) => ({ ...currentLocks, [command.category]: completionTime }));
       }
       setCompletionTimes(nextCompletionTimes);
       const effectiveEffects = dedupeMessages(
-        getDisplayedEffects(command, current, completionTimes, diagnosisMet, hasRosc, isCardiacArrestCase)
+        getDisplayedEffects(command, current, completionTimes, activeDiagnosisId, hasRosc, isCardiacArrestCase)
       );
+      const nextLogEntry = {
+        time: next.elapsed,
+        message: getLogSummary(command, effectiveEffects),
+        tone: commandTone(effectiveGrade),
+        kind: "action" as const
+      };
       setLog((entries) => [
-        ...entries.filter((entry) => !(entry.time === next.elapsed && entry.message === getLogSummary(command, effectiveEffects))),
-        {
-          time: next.elapsed,
-          message: getLogSummary(command, effectiveEffects),
-          tone: commandTone(effectiveGrade),
-          kind: "action"
-        }
+        ...entries.filter((entry) => !(entry.time === nextLogEntry.time && entry.message === nextLogEntry.message)),
+        nextLogEntry
       ]);
       return next;
     });
@@ -619,8 +634,10 @@ export function App() {
     }
 
     const lockedUntil = categoryLocks[command.category] ?? 0;
+    const commandLockedUntil = completionTimes[command.id] ?? 0;
+    const commandLocked = command.repeatable && commandLockedUntil > patient.elapsed;
     const blockReason = getCommandBlockReason(command, patient, completionTimes, winCondition, diagnosisMet);
-    if ((command.blocksCategory !== false && lockedUntil > patient.elapsed) || blockReason) {
+    if ((command.blocksCategory !== false && lockedUntil > patient.elapsed) || commandLocked || blockReason) {
       return;
     }
 
@@ -786,6 +803,7 @@ export function App() {
           <div className="patient-scene" aria-label="患者表示">
             <img className="patient-body-image" src={getAssetUrl("images/wholeBody.png")} alt="患者全身像" />
             {hasFastPositiveFinding ? <img className="patient-fast-image" src={getAssetUrl("images/FAST_abdominal1.jpg")} alt="FAST腹部所見" /> : null}
+            {hasJvdFinding ? <img className="patient-jvd-image" src={getAssetUrl("images/juglar vein distention.png")} alt="頸静脈怒張" /> : null}
             <div
               className="patient-face"
               aria-label="患者の顔色・表情"
@@ -832,10 +850,10 @@ export function App() {
             <div className="objective-group-title">必須処置</div>
             {initialRequiredCommands.map((id) => {
               const command = commands.find((item) => item.id === id)!;
-              const done = isCommandComplete(id, patient, completionTimes);
+              const done = isRequiredCommandSatisfied(id, patient, completionTimes);
               return (
                 <p className={done ? "done" : ""} key={id}>
-                  {done ? "完了" : "未実施"}: {command.label}
+                  {done ? "達成" : "未達成"}: {command.label}
                 </p>
               );
             })}
@@ -850,10 +868,10 @@ export function App() {
                     <div className="objective-group-title">大量出血診断後</div>
                     {postDiagnosisRequiredCommands.map((id) => {
                       const command = commands.find((item) => item.id === id)!;
-                      const done = isCommandComplete(id, patient, completionTimes);
+                      const done = isRequiredCommandSatisfied(id, patient, completionTimes);
                       return (
                         <p className={done ? "done" : ""} key={id}>
-                          {done ? "完了" : "未実施"}: {command.label}
+                          {done ? "達成" : "未達成"}: {command.label}
                         </p>
                       );
                     })}
@@ -1008,15 +1026,17 @@ export function App() {
                         const done = patient.performed.includes(command.id) && !command.repeatable;
                         const lockedUntil = categoryLocks[command.category] ?? 0;
                         const categoryLocked = command.blocksCategory !== false && lockedUntil > patient.elapsed;
+                        const commandLockedUntil = completionTimes[command.id] ?? 0;
+                        const commandLocked = command.repeatable && commandLockedUntil > patient.elapsed;
                         const blockReason = getCommandBlockReason(command, patient, completionTimes, winCondition, diagnosisMet);
-                        const effectiveGrade = getDisplayedGrade(command, patient, completionTimes, diagnosisMet, hasRosc, isCardiacArrestCase);
+                        const effectiveGrade = getDisplayedGrade(command, patient, completionTimes, activeDiagnosisId, hasRosc, isCardiacArrestCase);
                         const effectiveEffects = dedupeMessages(
-                          getDisplayedEffects(command, patient, completionTimes, diagnosisMet, hasRosc, isCardiacArrestCase)
+                          getDisplayedEffects(command, patient, completionTimes, activeDiagnosisId, hasRosc, isCardiacArrestCase)
                         );
                         return (
                           <button
                             className={`command command-${effectiveGrade}`}
-                            disabled={status !== "running" || done || categoryLocked || Boolean(blockReason)}
+                            disabled={status !== "running" || done || categoryLocked || commandLocked || Boolean(blockReason)}
                             key={command.id}
                             onClick={() => execute(command)}
                             title={`必要条件: ${command.requiredConditions.join(" / ")}\n影響: ${effectiveEffects.join(" / ")}`}
@@ -1026,6 +1046,7 @@ export function App() {
                               {gradeLabel(effectiveGrade)} / {command.duration}秒
                             </small>
                             {categoryLocked ? <small className="lock-note">完遂待ち {formatTime(lockedUntil - patient.elapsed)}</small> : null}
+                            {commandLocked ? <small className="lock-note">再実行待ち {formatTime(commandLockedUntil - patient.elapsed)}</small> : null}
                             {blockReason ? <small className="lock-note">{blockReason}</small> : null}
                             <em>条件: {command.requiredConditions.join(" / ")}</em>
                             <em>影響: {effectiveEffects.join(" / ")}</em>

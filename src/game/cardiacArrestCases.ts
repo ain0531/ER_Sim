@@ -22,6 +22,15 @@ function createDefaultArrestProfiles(): Record<CommandId, CaseCommandProfile> {
       };
     }
 
+    if (command.id === "chestCompression") {
+      profile = {
+        grade: "best",
+        requiredConditions: ["CPR開始", "心肺停止"],
+        effects: ["心拍出量を維持する", "蘇生の基本処置"],
+        stateDelta: { circulation: 8, oxygenation: 5, shock: -6 }
+      };
+    }
+
     if (["oxygen", "iv"].includes(command.id)) {
       profile = {
         grade: "acceptable",
@@ -186,14 +195,14 @@ export const ventricularFibrillationCase = createArrestCase({
     consciousness: 10,
     airway: 42,
     breathing: 20,
-    circulation: 28,
+    circulation: 0,
     bleeding: 0,
     oxygenation: 24,
     shock: 88,
     performed: []
   },
   winCondition: {
-    requiredCommands: ["ecgMonitor", "defibrillation", "iv", "adrenalineIvBolus", "intubation"],
+    requiredCommands: ["ecgMonitor", "chestCompression", "defibrillation", "iv", "adrenalineIvBolus", "intubation"],
     stabilization: {
       minBpSys: 80,
       maxShock: 70
@@ -253,14 +262,14 @@ export const ventricularTachycardiaCase = createArrestCase({
     consciousness: 12,
     airway: 45,
     breathing: 22,
-    circulation: 30,
+    circulation: 0,
     bleeding: 0,
     oxygenation: 26,
     shock: 86,
     performed: []
   },
   winCondition: {
-    requiredCommands: ["ecgMonitor", "defibrillation", "iv", "adrenalineIvBolus"],
+    requiredCommands: ["ecgMonitor", "chestCompression", "defibrillation", "iv", "adrenalineIvBolus"],
     stabilization: {
       minBpSys: 80,
       maxShock: 70
@@ -320,14 +329,14 @@ export const asystoleCase = createArrestCase({
     consciousness: 8,
     airway: 40,
     breathing: 18,
-    circulation: 26,
+    circulation: 0,
     bleeding: 0,
     oxygenation: 22,
     shock: 90,
     performed: []
   },
   winCondition: {
-    requiredCommands: ["ecgMonitor", "iv", "adrenalineIvBolus", "intubation"],
+    requiredCommands: ["ecgMonitor", "chestCompression", "iv", "adrenalineIvBolus", "intubation"],
     stabilization: {
       minBpSys: 75,
       maxShock: 72
@@ -387,14 +396,14 @@ export const peaCase = createArrestCase({
     consciousness: 10,
     airway: 42,
     breathing: 20,
-    circulation: 27,
+    circulation: 0,
     bleeding: 0,
     oxygenation: 24,
     shock: 89,
     performed: []
   },
   winCondition: {
-    requiredCommands: ["ecgMonitor", "bpCuff", "iv", "adrenalineIvBolus", "intubation"],
+    requiredCommands: ["ecgMonitor", "bpCuff", "chestCompression", "iv", "adrenalineIvBolus", "intubation"],
     stabilization: {
       minBpSys: 75,
       maxShock: 72

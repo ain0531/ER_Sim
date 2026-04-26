@@ -370,6 +370,18 @@ h2 {
   z-index: 1;
 }
 
+.patient-jvd-image {
+  position: absolute;
+  top: 12px;
+  right: 10px;
+  z-index: 1;
+  width: 100px;
+  max-width: 38%;
+  object-fit: contain;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(11, 17, 14, 0.92);
+}
+
 .patient-fast-image {
   position: absolute;
   top: 50%;
