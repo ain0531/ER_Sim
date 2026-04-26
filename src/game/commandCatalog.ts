@@ -35,7 +35,7 @@ export const commandCatalog: BaseCommand[] = [
   { id: "ecmo", category: "C", displayKind: "procedure", label: "ECMO留置", duration: 90 },
   { id: "pericardiocentesis", category: "C", displayKind: "procedure", label: "心嚢腔穿刺", duration: 25 },
   { id: "massiveFluid", category: "C", displayKind: "procedure", label: "大量輸液", duration: 25 },
-  { id: "cpr", category: "C", displayKind: "procedure", label: "心肺蘇生", duration: 5, blocksCategory: false, repeatable: true },
+  { id: "cpr", category: "C", displayKind: "procedure", label: "心肺蘇生", duration: 5, repeatable: true },
   { id: "cardioversion", category: "C", displayKind: "procedure", label: "カルディオバージョン", duration: 10, repeatable: true },
   { id: "defibrillation", category: "C", displayKind: "procedure", label: "除細動", duration: 30, blocksCategory: false, repeatable: true },
   { id: "transfusion", category: "C", displayKind: "procedure", label: "輸血", duration: 60, blocksCategory: false },
