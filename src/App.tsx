@@ -318,6 +318,7 @@ export function App() {
   const rr = Math.min(44, Math.max(8, Math.round(10 + (100 - patient.breathing) * 0.28)));
   const rrDisplay = hasRrObservation ? `${rr}` : "--";
   const monitorRhythmHint = selectedMonitorRhythm;
+  const monitorHr = monitorRhythmHint === "vt" ? 200 : patient.hr;
   const hasFastPositiveFinding = isCommandComplete("fast", patient, completionTimes) && Boolean(inspectionFindings.fast);
   const hasJvdFinding = isCommandComplete("neckVeinCheck", patient, completionTimes) &&
     Boolean(inspectionFindings.neckVeinCheck) &&
@@ -379,9 +380,9 @@ export function App() {
     (hasSpo2Monitor && hasDetectableBloodPressure && patient.spo2 <= 92);
 
   useEffect(() => {
-    hrRef.current = patient.hr;
+    hrRef.current = monitorHr;
     spo2Ref.current = patient.spo2;
-  }, [patient.hr, patient.spo2]);
+  }, [monitorHr, patient.spo2]);
 
   useEffect(() => {
     hasEcgMonitorRef.current = hasEcgMonitor;
@@ -600,9 +601,10 @@ export function App() {
         command.id === "defibrillation" &&
         (selectedMonitorRhythm === "vf" || selectedMonitorRhythm === "vt")
       ) {
+        const defibrillationSuccessRate = selectedMonitorRhythm === "vt" ? 0.4 : 0.3;
         setPendingDefibrillation({
           resolvesAt: completionTime,
-          willSucceed: effectiveGrade !== "worst" && Math.random() < 0.3
+          willSucceed: effectiveGrade !== "worst" && Math.random() < defibrillationSuccessRate
         });
       }
       const nextOutcome = getOutcome(next, nextCompletionTimes, winCondition, lossCondition, nextDiagnosisMet);
@@ -908,7 +910,7 @@ export function App() {
 
           {hasEcgMonitor ? (
             <div className="waveform" aria-label="心電図波形">
-              <EcgWaveform hr={patient.hr} shock={patient.shock} status={status} rhythmHint={monitorRhythmHint} />
+              <EcgWaveform hr={monitorHr} shock={patient.shock} status={status} rhythmHint={monitorRhythmHint} />
             </div>
           ) : (
             <div className="waveform waveform-off">心電図 未装着</div>
@@ -918,7 +920,7 @@ export function App() {
             <div className="vital heart">
               <Activity size={22} />
               <span>HR</span>
-              <strong>{hasEcgMonitor ? patient.hr : "--"}</strong>
+              <strong>{hasEcgMonitor ? monitorHr : "--"}</strong>
             </div>
             <div className="vital pressure">
               <HeartPulse size={22} />
@@ -959,7 +961,11 @@ export function App() {
 
           {outcome !== "running" && status !== "ready" ? (
             <div className={`result result-${outcome}`}>
-              {outcome === "won" ? "出血制御への導線を確保。患者は手術室へ搬送されました。" : "ショックが進行し、救命に失敗しました。"}
+              {outcome === "won"
+                ? (requiresPrimarySurvey
+                  ? "出血制御への導線を確保。患者は手術室へ搬送されました。"
+                  : "バイタルが安定しました。患者はICUに搬送されました。")
+                : "ショックが進行し、救命に失敗しました。"}
             </div>
           ) : null}
 

@@ -234,11 +234,17 @@ export const ventricularFibrillationCase = createArrestCase({
       stateDelta: { shock: 26, circulation: -22, oxygenation: -12 }
     },
     adrenalineIvBolus: {
-      grade: "best",
-      requiredConditions: ["ルート確保完了", "蘇生薬投与"],
-      effects: ["蘇生薬投与を行う"],
-      stateDelta: { circulation: 8, shock: -6 },
-      requiresCompleted: [vascularAccessRequirement]
+      grade: "harmful",
+      requiredConditions: ["ルート確保完了", "除細動後の蘇生薬投与"],
+      effects: ["除細動前のアドレナリン投与は優先順を誤り蘇生を遅らせる"],
+      stateDelta: { shock: 10, circulation: -6, oxygenation: -4 },
+      requiresCompleted: [vascularAccessRequirement],
+      conditionalProfile: {
+        requiresAnyCompleted: ["defibrillation"],
+        grade: "best",
+        effects: ["蘇生薬投与を行う"],
+        stateDelta: { circulation: 8, shock: -6 }
+      }
     }
   }
 });
@@ -269,7 +275,7 @@ export const ventricularTachycardiaCase = createArrestCase({
     performed: []
   },
   winCondition: {
-    requiredCommands: ["ecgMonitor", "chestCompression", "defibrillation", "iv", "adrenalineIvBolus"],
+    requiredCommands: ["ecgMonitor", "chestCompression", "defibrillation", "iv", "adrenalineIvBolus", "intubation"],
     stabilization: {
       minBpSys: 80,
       maxShock: 70
@@ -295,17 +301,23 @@ export const ventricularTachycardiaCase = createArrestCase({
       stateDelta: { circulation: 14, shock: -16, oxygenation: 8 }
     },
     cardioversion: {
-      grade: "harmful",
+      grade: "worst",
       requiredConditions: ["脈あり心室頻拍"],
-      effects: ["脈なしVTでは優先が低く、蘇生を遅らせる"],
-      stateDelta: { shock: 12, circulation: -10 }
+      effects: ["適応外で蘇生を妨げる"],
+      stateDelta: { shock: 26, circulation: -22, oxygenation: -12 }
     },
     adrenalineIvBolus: {
-      grade: "best",
-      requiredConditions: ["ルート確保完了", "蘇生薬投与"],
-      effects: ["蘇生薬投与を行う"],
-      stateDelta: { circulation: 8, shock: -6 },
-      requiresCompleted: [vascularAccessRequirement]
+      grade: "harmful",
+      requiredConditions: ["ルート確保完了", "除細動後の蘇生薬投与"],
+      effects: ["除細動前のアドレナリン投与は優先順を誤り蘇生を遅らせる"],
+      stateDelta: { shock: 10, circulation: -6, oxygenation: -4 },
+      requiresCompleted: [vascularAccessRequirement],
+      conditionalProfile: {
+        requiresAnyCompleted: ["defibrillation"],
+        grade: "best",
+        effects: ["蘇生薬投与を行う"],
+        stateDelta: { circulation: 8, shock: -6 }
+      }
     }
   }
 });

@@ -44,11 +44,14 @@ function pqrst(phase: number): number {
   return 0;
 }
 
-// Wide bizarre QRS — no P wave, broad deflections characteristic of VT
+// Extreme VT as continuous QRS-only repetition: one broad tall positive limb and one narrow deep negative limb
 function vtWave(phase: number): number {
-  if (phase >= 0.04 && phase < 0.36) return Math.sin(((phase - 0.04) / 0.32) * Math.PI) * 0.90;
-  if (phase >= 0.36 && phase < 0.58) return -Math.sin(((phase - 0.36) / 0.22) * Math.PI) * 0.72;
-  return 0;
+  if (phase < 0.76) {
+    const x = phase / 0.76;
+    return 1.04 * (1 - (x * 2 - 1) ** 2);
+  }
+  const x = (phase - 0.76) / 0.24;
+  return -1.02 * Math.sin(x * Math.PI);
 }
 
 // Chaotic multi-frequency noise — simulates coarse VF
@@ -65,6 +68,11 @@ function getY(t: number, rhythm: Rhythm, rr: number): number {
   if (rhythm === "vf") return vfWave(t);
   const phase = (t % rr) / rr;
   return rhythm === "vt" ? vtWave(phase) : pqrst(phase);
+}
+
+function getAmplitudeScale(height: number, rhythm: Rhythm): number {
+  if (rhythm === "vt") return height * 0.47;
+  return height * 0.42;
 }
 
 export function EcgWaveform({ hr, shock, status, rhythmHint }: Props) {
@@ -158,7 +166,7 @@ export function EcgWaveform({ hr, shock, status, rhythmHint }: Props) {
       ctx.lineCap = "round";
 
       const midY = H / 2;
-      const amp = H * 0.42;
+      const amp = getAmplitudeScale(H, rhythm);
       const pxPerSec = SCROLL_PPS * scale;
 
       for (let x = 0; x <= W; x++) {
