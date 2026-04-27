@@ -94,6 +94,20 @@ export function getActiveRequiredCommands(
   return [...new Set(activeCommands)];
 }
 
+function isStabilizationMet(
+  state: PatientState,
+  completionTimes: CompletionTimes,
+  winCondition: WinCondition
+) {
+  const bpStable = state.bpSys >= winCondition.stabilization.minBpSys;
+  const shockStable = state.shock < winCondition.stabilization.maxShock;
+  const primarySurveyCommands = winCondition.stabilization.primarySurveyCommands ?? [];
+  const primarySurveyDone =
+    primarySurveyCommands.length === 0 || primarySurveyCommands.every((id) => isCommandComplete(id, state, completionTimes));
+
+  return bpStable && shockStable && primarySurveyDone;
+}
+
 function applyProgressionDelta(
   state: PatientState,
   completionTimes: CompletionTimes,
@@ -262,14 +276,23 @@ export function getOutcome(
   lossCondition: LossCondition,
   diagnosedMassiveHemorrhage = false
 ): GameStatus {
-  if (getActiveRequiredCommands(state, completionTimes, winCondition, diagnosedMassiveHemorrhage).every((id) =>
+  const requiredCommandsMet = getActiveRequiredCommands(state, completionTimes, winCondition, diagnosedMassiveHemorrhage).every((id) =>
     isRequiredCommandSatisfied(id, state, completionTimes)
-  )) {
+  );
+
+  if (requiredCommandsMet && isStabilizationMet(state, completionTimes, winCondition)) {
     return "won";
   }
 
-  if (state.bpSys <= lossCondition.minBpSys || state.shock >= lossCondition.maxShock || state.elapsed >= lossCondition.maxElapsed) {
+  if (state.bpSys <= lossCondition.minBpSys || state.shock >= lossCondition.maxShock) {
     return "lost";
+  }
+
+  if (state.elapsed >= lossCondition.maxElapsed) {
+    const stabilizedAtTimeout =
+      state.bpSys >= winCondition.stabilization.minBpSys &&
+      state.shock < winCondition.stabilization.maxShock;
+    return stabilizedAtTimeout ? "won" : "lost";
   }
 
   return "running";

@@ -359,24 +359,24 @@ h2 {
 
 .patient-face {
   position: absolute;
-  top: 10px;
-  left: 10px;
-  width: 80px;
-  height: 80px;
+  top: 8px;
+  left: 8px;
+  width: 72px;
+  height: 72px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background-color: #1a2420;
   background-repeat: no-repeat;
   overflow: hidden;
-  z-index: 1;
+  z-index: 2;
 }
 
 .patient-jvd-image {
   position: absolute;
-  top: 12px;
-  right: 10px;
-  z-index: 1;
-  width: 100px;
-  max-width: 38%;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 64px;
+  max-width: 24%;
   object-fit: contain;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(11, 17, 14, 0.92);
@@ -384,12 +384,11 @@ h2 {
 
 .patient-fast-image {
   position: absolute;
-  top: 50%;
-  left: 20px;
-  z-index: 1;
-  width: 120px;
-  max-width: 32%;
-  transform: translateY(-50%);
+  bottom: 8px;
+  left: 8px;
+  z-index: 2;
+  width: 92px;
+  max-width: 28%;
   object-fit: contain;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(11, 17, 14, 0.92);
@@ -397,12 +396,12 @@ h2 {
 
 .patient-body-image {
   position: absolute;
-  inset: 12px;
+  inset: 8px;
   z-index: 1;
   width: auto;
   height: auto;
-  max-width: calc(100% - 24px);
-  max-height: calc(100% - 24px);
+  max-width: calc(100% - 16px);
+  max-height: calc(100% - 16px);
   margin: auto;
   object-fit: contain;
 }
@@ -1024,7 +1023,7 @@ button:disabled {
   }
 
   .command-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .patient-scene {

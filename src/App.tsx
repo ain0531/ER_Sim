@@ -316,6 +316,7 @@ export function App() {
   const hasRadialPulseCheck = isCommandComplete("radialPulseCheck", patient, completionTimes);
   const hasIntubation = isCommandComplete("intubation", patient, completionTimes);
   const hasCardiacArrest = isCardiacArrestCase || (hasRadialPulseCheck && !hasDetectableBloodPressure);
+  const displayedGcs = hasIntubation ? patient.gcs.replace(/V\d+/, "VT") : patient.gcs;
   const hasCirculationAssessment = hasBpCuff && hasEcgMonitor;
   const inspectionFindings = activeCase.metadata.inspectionFindings ?? {};
   const radialPulseAbsent = !hasDetectableBloodPressure;
@@ -328,9 +329,12 @@ export function App() {
   const monitorHr = monitorRhythmHint === "vt" ? 200 : patient.hr;
   const maskedCaseTitle = requiresPrimarySurvey ? "外傷救急症例" : "内科救急症例";
   const hasFastPositiveFinding = isCommandComplete("fast", patient, completionTimes) && Boolean(inspectionFindings.fast);
+  const trachealDeviationFinding = inspectionFindings.trachealDeviationCheck ?? "";
+  const neckVeinFinding = inspectionFindings.neckVeinCheck ?? "";
+  const hasPositiveTrachealDeviation = isCommandComplete("trachealDeviationCheck", patient, completionTimes) &&
+    (trachealDeviationFinding.includes("偏位している") || trachealDeviationFinding.includes("偏位を認める"));
   const hasJvdFinding = isCommandComplete("neckVeinCheck", patient, completionTimes) &&
-    Boolean(inspectionFindings.neckVeinCheck) &&
-    !(inspectionFindings.neckVeinCheck ?? "").includes("明らかでない");
+    neckVeinFinding.includes("怒張を認める");
   const diagnosisCandidateVisible =
     winCondition.diagnosisRule !== undefined &&
     isCommandComplete("fast", patient, completionTimes) &&
@@ -371,6 +375,11 @@ export function App() {
   const stabilizationScore = 35 * stabilizationRate;
   const commandScore = Math.max(0, Math.min(30, commandQualityRaw));
   const totalScore = clampScore(timeScore + stabilizationScore + commandScore);
+  const lossReasons = [
+    patient.bpSys <= lossCondition.minBpSys ? `SBP ${lossCondition.minBpSys}以下` : null,
+    patient.shock >= lossCondition.maxShock ? `shock ${lossCondition.maxShock}以上` : null,
+    patient.elapsed >= lossCondition.maxElapsed ? `制限時間 ${formatTime(lossCondition.maxElapsed)} 到達` : null
+  ].filter((reason): reason is string => reason !== null);
   const orderedCommands = useMemo(
     () =>
       [...commands].sort((left, right) => {
@@ -411,10 +420,8 @@ export function App() {
 
     const hasShockVitals = !hasCardiacArrest && hasCirculationAssessment && patient.hr >= 120 && patient.bpSys <= 90;
     const hasFastPositive = isCommandComplete("fast", patient, completionTimes);
-    const hasTrachealDeviation = isCommandComplete("trachealDeviationCheck", patient, completionTimes);
-    const hasNeckVeinDistension = isCommandComplete("neckVeinCheck", patient, completionTimes);
     const hasHypotension = hasBpCuff && patient.bpSys <= 90;
-    const hasTensionPneumothoraxTriad = hasTrachealDeviation && hasNeckVeinDistension && hasHypotension;
+    const hasTensionPneumothoraxTriad = hasPositiveTrachealDeviation && hasJvdFinding && hasHypotension;
     const alerts = [
       { id: "cardiacArrest", active: hasRadialPulseCheck && !hasDetectableBloodPressure, popup: { message: "心停止です！" } },
       { id: "shockVitals", active: hasShockVitals, popup: { message: "ショック状態です！" } },
@@ -451,7 +458,7 @@ export function App() {
       setPopupState(nextAlert.popup);
       setSeenAlerts((current) => ({ ...current, [nextAlert.id]: true }));
     }
-  }, [completionTimes, hasBpCuff, hasCardiacArrest, hasCirculationAssessment, hasDetectableBloodPressure, hasRadialPulseCheck, patient.bpSys, patient.hr, popupState, seenAlerts, status]);
+  }, [completionTimes, hasBpCuff, hasCardiacArrest, hasCirculationAssessment, hasDetectableBloodPressure, hasJvdFinding, hasPositiveTrachealDeviation, hasRadialPulseCheck, patient.bpSys, patient.hr, popupState, seenAlerts, status]);
 
   useEffect(() => {
     if (quizPopupState && status !== "running") {
@@ -975,7 +982,7 @@ export function App() {
             <div className="vital">
               <Stethoscope size={22} />
               <span>GCS</span>
-              <strong>{hasConsciousnessCheck ? patient.gcs : "--"}</strong>
+              <strong>{hasConsciousnessCheck ? displayedGcs : "--"}</strong>
             </div>
           </div>
 
@@ -1114,6 +1121,10 @@ export function App() {
                     shock {winCondition.stabilization.maxShock}未満
                     {requiresPrimarySurvey && primarySurveyCommands.length > 0 ? " / Primary Survey" : ""}
                   </p>
+                </div>
+                <div className="debug-section">
+                  <strong>敗北理由</strong>
+                  <p>{lossReasons.length > 0 ? lossReasons.join(" / ") : "なし"}</p>
                 </div>
                 <div className="debug-section">
                   <strong>カテゴリロック</strong>
