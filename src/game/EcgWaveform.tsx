@@ -160,8 +160,8 @@ export function EcgWaveform({ hr, shock, status, rhythmHint }: Props) {
       ctx.beginPath();
       ctx.strokeStyle = LINE_COLOR;
       ctx.lineWidth = 2.5 * scale;
-      ctx.shadowColor = GLOW_COLOR;
-      ctx.shadowBlur = 10 * scale;
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
 

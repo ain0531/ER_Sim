@@ -1,4 +1,4 @@
-import { Activity, ChevronDown, Clock, Droplets, HeartPulse, Menu, Play, ShieldAlert, Square, Stethoscope, Thermometer, Volume2, VolumeX, Wind } from "lucide-react";
+import { Activity, ChevronDown, Droplets, HeartPulse, Menu, Play, ShieldAlert, Square, Stethoscope, Thermometer, Volume2, VolumeX, Wind } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { gameCases } from "./game/cases";
 import { EcgWaveform } from "./game/EcgWaveform";
@@ -10,6 +10,7 @@ import {
   commandTone,
   deriveVitals,
   formatTime,
+  formatTimeWithTenths,
   getActiveRequiredCommands,
   getCommandBlockReason,
   getEffectiveEffects,
@@ -80,6 +81,8 @@ const commandDisplayOrder = {
   procedure: 2,
   medication: 3
 } as const;
+
+const monitorCommandIds = new Set(["ecgMonitor", "bpCuff", "spo2Monitor", "temperatureMeasurement"]);
 
 type PopupState = {
   message: string;
@@ -191,10 +194,13 @@ export function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [quizPopupState, setQuizPopupState] = useState<QuizPopupState | null>(null);
   const [pendingDefibrillation, setPendingDefibrillation] = useState<PendingDefibrillation | null>(null);
+  const [displayRemaining, setDisplayRemaining] = useState(lossCondition.maxElapsed);
   const logListRef = useRef<HTMLDivElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const beatTimerRef = useRef<number | null>(null);
   const warningTimerRef = useRef<number | null>(null);
+  const countdownTimerRef = useRef<number | null>(null);
+  const elapsedAnchorMsRef = useRef<number | null>(null);
   const hrRef = useRef(patient.hr);
   const spo2Ref = useRef(patient.spo2);
   const hasEcgMonitorRef = useRef(false);
@@ -229,6 +235,13 @@ export function App() {
     if (warningTimerRef.current !== null) {
       window.clearInterval(warningTimerRef.current);
       warningTimerRef.current = null;
+    }
+  }
+
+  function stopCountdownTimer() {
+    if (countdownTimerRef.current !== null) {
+      window.clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
     }
   }
 
@@ -290,6 +303,8 @@ export function App() {
     [completionTimes, diagnosedMassiveHemorrhage, hasRosc, lossCondition, patient, winCondition]
   );
   const remaining = Math.max(0, lossCondition.maxElapsed - patient.elapsed);
+  const countdownTone =
+    remaining <= 10 ? "critical" : remaining <= 30 ? "warning" : "normal";
   const isCardiacArrestCase = activeCase.id.startsWith("cardiac-arrest-");
   const initialRequiredCommands = winCondition.requiredCommands;
   const postDiagnosisRequiredCommands = winCondition.diagnosisRule?.additionalRequiredCommands ?? [];
@@ -311,7 +326,11 @@ export function App() {
   const hasSpo2Monitor = isCommandComplete("spo2Monitor", patient, completionTimes);
   const hasBpCuff = isCommandComplete("bpCuff", patient, completionTimes);
   const hasEcgMonitor = isCommandComplete("ecgMonitor", patient, completionTimes);
+  const ecgRequested = patient.performed.includes("ecgMonitor");
+  const bpRequested = patient.performed.includes("bpCuff");
+  const spo2Requested = patient.performed.includes("spo2Monitor");
   const hasTemperatureMeasurement = isCommandComplete("temperatureMeasurement", patient, completionTimes);
+  const tempRequested = patient.performed.includes("temperatureMeasurement");
   const hasConsciousnessCheck = isCommandComplete("consciousnessCheck", patient, completionTimes);
   const hasRadialPulseCheck = isCommandComplete("radialPulseCheck", patient, completionTimes);
   const hasIntubation = isCommandComplete("intubation", patient, completionTimes);
@@ -380,9 +399,15 @@ export function App() {
     patient.shock >= lossCondition.maxShock ? `shock ${lossCondition.maxShock}以上` : null,
     patient.elapsed >= lossCondition.maxElapsed ? `制限時間 ${formatTime(lossCondition.maxElapsed)} 到達` : null
   ].filter((reason): reason is string => reason !== null);
+  const bpCuffCommand = commands.find((command) => command.id === "bpCuff");
+  const ecgMonitorCommand = commands.find((command) => command.id === "ecgMonitor");
+  const spo2MonitorCommand = commands.find((command) => command.id === "spo2Monitor");
+  const temperatureMeasurementCommand = commands.find((command) => command.id === "temperatureMeasurement");
   const orderedCommands = useMemo(
     () =>
-      [...commands].sort((left, right) => {
+      [...commands]
+        .filter((command) => !monitorCommandIds.has(command.id))
+        .sort((left, right) => {
         const byDisplayKind = commandDisplayOrder[left.displayKind] - commandDisplayOrder[right.displayKind];
         if (byDisplayKind !== 0) {
           return byDisplayKind;
@@ -395,6 +420,41 @@ export function App() {
     (hasBpCuff && patient.bpSys <= 90) ||
     (hasEcgMonitor && (patient.hr >= 130 || patient.hr <= 45)) ||
     (hasSpo2Monitor && hasDetectableBloodPressure && patient.spo2 <= 92);
+  const ecgCommandLockedUntil = completionTimes.ecgMonitor ?? 0;
+  const ecgCommandLocked = Boolean(ecgMonitorCommand?.repeatable) && ecgCommandLockedUntil > patient.elapsed;
+  const ecgBlockReason =
+    ecgMonitorCommand
+      ? getCommandBlockReason(ecgMonitorCommand, patient, completionTimes, winCondition, diagnosisMet)
+      : null;
+  const ecgButtonDisabled =
+    !ecgMonitorCommand ||
+    status !== "running" ||
+    popupState !== null ||
+    ecgRequested ||
+    ecgCommandLocked ||
+    Boolean(ecgBlockReason);
+  const bpCommandLockedUntil = completionTimes.bpCuff ?? 0;
+  const bpCommandLocked = Boolean(bpCuffCommand?.repeatable) && bpCommandLockedUntil > patient.elapsed;
+  const bpBlockReason =
+    bpCuffCommand ? getCommandBlockReason(bpCuffCommand, patient, completionTimes, winCondition, diagnosisMet) : null;
+  const bpButtonDisabled =
+    !bpCuffCommand || status !== "running" || popupState !== null || bpRequested || bpCommandLocked || Boolean(bpBlockReason);
+  const spo2CommandLockedUntil = completionTimes.spo2Monitor ?? 0;
+  const spo2CommandLocked = Boolean(spo2MonitorCommand?.repeatable) && spo2CommandLockedUntil > patient.elapsed;
+  const spo2BlockReason =
+    spo2MonitorCommand
+      ? getCommandBlockReason(spo2MonitorCommand, patient, completionTimes, winCondition, diagnosisMet)
+      : null;
+  const spo2ButtonDisabled =
+    !spo2MonitorCommand || status !== "running" || popupState !== null || spo2Requested || spo2CommandLocked || Boolean(spo2BlockReason);
+  const tempCommandLockedUntil = completionTimes.temperatureMeasurement ?? 0;
+  const tempCommandLocked = Boolean(temperatureMeasurementCommand?.repeatable) && tempCommandLockedUntil > patient.elapsed;
+  const tempBlockReason =
+    temperatureMeasurementCommand
+      ? getCommandBlockReason(temperatureMeasurementCommand, patient, completionTimes, winCondition, diagnosisMet)
+      : null;
+  const tempButtonDisabled =
+    !temperatureMeasurementCommand || status !== "running" || popupState !== null || tempRequested || tempCommandLocked || Boolean(tempBlockReason);
 
   useEffect(() => {
     hrRef.current = monitorHr;
@@ -412,6 +472,30 @@ export function App() {
       setDiagnosedMassiveHemorrhage(true);
     }
   }, [computedDiagnosisMet, diagnosedMassiveHemorrhage]);
+
+  useEffect(() => {
+    if (status !== "running" || popupState) {
+      elapsedAnchorMsRef.current = null;
+      setDisplayRemaining(Math.max(0, lossCondition.maxElapsed - patient.elapsed));
+      stopCountdownTimer();
+      return;
+    }
+
+    elapsedAnchorMsRef.current = performance.now();
+    setDisplayRemaining(Math.max(0, lossCondition.maxElapsed - patient.elapsed));
+    stopCountdownTimer();
+
+    countdownTimerRef.current = window.setInterval(() => {
+      const anchor = elapsedAnchorMsRef.current;
+      if (anchor === null) {
+        return;
+      }
+      const elapsedFraction = (performance.now() - anchor) / 1000;
+      setDisplayRemaining(Math.max(0, lossCondition.maxElapsed - patient.elapsed - elapsedFraction));
+    }, 100);
+
+    return () => stopCountdownTimer();
+  }, [lossCondition.maxElapsed, patient.elapsed, popupState, status]);
 
   useEffect(() => {
     if (popupState || status !== "running") {
@@ -557,6 +641,7 @@ export function App() {
   }, [hasAbnormalVitals, popupState, soundEnabled, status]);
 
   useEffect(() => () => stopSoundTimers(), []);
+  useEffect(() => () => stopCountdownTimer(), []);
 
   async function start() {
     if (soundEnabled) {
@@ -589,6 +674,7 @@ export function App() {
     setPopupState(null);
     setSelectedMonitorRhythm(nextMonitorRhythm);
     setHasDetectableBloodPressure(!nextCase.id.startsWith("cardiac-arrest-"));
+    setDisplayRemaining(nextCase.lossCondition.maxElapsed);
     setLog([{ time: 0, message: nextCase.metadata.initialLogs[nextGender], tone: "neutral", kind: "system" }]);
     stopSoundTimers();
   }
@@ -634,7 +720,7 @@ export function App() {
       }
       const nextOutcome = getOutcome(next, nextCompletionTimes, winCondition, lossCondition, nextDiagnosisMet);
       setStatus(nextOutcome);
-      if (command.blocksCategory !== false) {
+      if (command.blocksCategory !== false && !monitorCommandIds.has(command.id)) {
         setCategoryLocks((currentLocks) => ({ ...currentLocks, [command.category]: completionTime }));
       }
       setCompletionTimes(nextCompletionTimes);
@@ -664,7 +750,8 @@ export function App() {
     const commandLockedUntil = completionTimes[command.id] ?? 0;
     const commandLocked = command.repeatable && commandLockedUntil > patient.elapsed;
     const blockReason = getCommandBlockReason(command, patient, completionTimes, winCondition, diagnosisMet);
-    if ((command.blocksCategory !== false && lockedUntil > patient.elapsed) || commandLocked || blockReason) {
+    const categoryBlocked = !monitorCommandIds.has(command.id) && command.blocksCategory !== false && lockedUntil > patient.elapsed;
+    if (categoryBlocked || commandLocked || blockReason) {
       return;
     }
 
@@ -936,9 +1023,12 @@ export function App() {
               <p className="eyebrow">Patient Monitor</p>
               <h2>バイタルサイン</h2>
             </div>
-            <div className="timer">
-              <Clock size={18} />
-              {formatTime(remaining)}
+            <div className={`timer timer-${countdownTone}`} aria-label="カウントダウンタイマー">
+              <div className="timer-shell">
+                <span className="timer-caption">INTERNAL POWER</span>
+                <strong className="timer-digits">{formatTimeWithTenths(displayRemaining)}</strong>
+                <span className="timer-subcaption">COUNT DOWN</span>
+              </div>
             </div>
           </div>
 
@@ -951,33 +1041,85 @@ export function App() {
           )}
 
           <div className="vitals">
-            <div className="vital heart">
+            <button
+              className={`vital vital-button heart ${ecgRequested ? "vital-on" : "vital-off"}`}
+              disabled={ecgButtonDisabled}
+              onClick={() => {
+                if (ecgMonitorCommand && !ecgRequested) {
+                  execute(ecgMonitorCommand);
+                }
+              }}
+              type="button"
+              title={ecgRequested ? "心電図 ON" : (ecgBlockReason ?? "心電図 OFF")}
+            >
               <Activity size={22} />
               <span>HR</span>
               <strong>{hasEcgMonitor ? monitorHr : "--"}</strong>
-            </div>
-            <div className="vital pressure">
+              <small className={`vital-state ${ecgRequested ? "vital-state-on" : "vital-state-off"}`}>
+                {ecgRequested ? "ECG ON" : "ECG OFF"}
+              </small>
+            </button>
+            <button
+              className={`vital vital-button pressure ${bpRequested ? "vital-on" : "vital-off"}`}
+              disabled={bpButtonDisabled}
+              onClick={() => {
+                if (bpCuffCommand && !bpRequested) {
+                  execute(bpCuffCommand);
+                }
+              }}
+              type="button"
+              title={bpRequested ? "血圧計 ON" : (bpBlockReason ?? "血圧計 OFF")}
+            >
               <HeartPulse size={22} />
               <span>BP</span>
               <strong>{bpDisplay}</strong>
-            </div>
-            <div className="vital oxygen">
+              <small className={`vital-state ${bpRequested ? "vital-state-on" : "vital-state-off"}`}>
+                {bpRequested ? "BP ON" : "BP OFF"}
+              </small>
+            </button>
+            <button
+              className={`vital vital-button oxygen ${spo2Requested ? "vital-on" : "vital-off"}`}
+              disabled={spo2ButtonDisabled}
+              onClick={() => {
+                if (spo2MonitorCommand && !spo2Requested) {
+                  execute(spo2MonitorCommand);
+                }
+              }}
+              type="button"
+              title={spo2Requested ? "SpO2 ON" : (spo2BlockReason ?? "SpO2 OFF")}
+            >
               <Droplets size={22} />
               <span>SpO2</span>
               <strong>{spo2Display}</strong>
-            </div>
+              <small className={`vital-state ${spo2Requested ? "vital-state-on" : "vital-state-off"}`}>
+                {spo2Requested ? "SpO2 ON" : "SpO2 OFF"}
+              </small>
+            </button>
+            <button
+              className={`vital vital-button temp ${tempRequested ? "vital-on" : "vital-off"}`}
+              disabled={tempButtonDisabled}
+              onClick={() => {
+                if (temperatureMeasurementCommand && !tempRequested) {
+                  execute(temperatureMeasurementCommand);
+                }
+              }}
+              type="button"
+              title={tempRequested ? "体温測定 ON" : (tempBlockReason ?? "体温測定 OFF")}
+            >
+              <Thermometer size={22} />
+              <span>Temp</span>
+              <strong>{hasTemperatureMeasurement ? patient.temp : "--"}</strong>
+              <small className={`vital-state ${tempRequested ? "vital-state-on" : "vital-state-off"}`}>
+                {tempRequested ? "Temp ON" : "Temp OFF"}
+              </small>
+            </button>
+          </div>
+
+          <div className="gcs-row">
             <div className="vital rr">
               <Wind size={22} />
               <span>RR</span>
               <strong>{rrDisplay}</strong>
-            </div>
-          </div>
-
-          <div className="gcs-row">
-            <div className="vital temp">
-              <Thermometer size={22} />
-              <span>Temp</span>
-              <strong>{hasTemperatureMeasurement ? patient.temp : "--"}</strong>
             </div>
             <div className="vital">
               <Stethoscope size={22} />

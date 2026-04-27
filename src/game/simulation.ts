@@ -22,6 +22,14 @@ export function formatTime(totalSeconds: number) {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
+export function formatTimeWithTenths(totalSeconds: number) {
+  const clamped = Math.max(0, totalSeconds);
+  const minutes = Math.floor(clamped / 60);
+  const seconds = Math.floor(clamped % 60);
+  const tenths = Math.floor((clamped - Math.floor(clamped)) * 10);
+  return `${minutes}:${seconds.toString().padStart(2, "0")}.${tenths}0`;
+}
+
 export function shuffleCommands(items: Command[]) {
   const shuffled = [...items];
   for (let index = shuffled.length - 1; index > 0; index -= 1) {
